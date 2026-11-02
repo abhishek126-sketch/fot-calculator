@@ -25,7 +25,7 @@
   .grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
   @media (max-width:640px){ .grid, .grid3 { grid-template-columns:1fr; } }
   label { display:block; font-size:13px; font-weight:600; margin-bottom:4px; }
-  select, input[type=text], input[type=number] {
+  select, input[type=text], input[type=number], input[type=date], textarea {
     width:100%; padding:10px; border:1px solid var(--line); border-radius:10px;
     font-size:15px; background:#fff; }
   input[readonly] { background:#e2e8f0; color:var(--accent); font-weight:700; }
@@ -43,6 +43,12 @@
   .row { display:flex; justify-content:space-between; gap:10px; padding:4px 0; border-bottom:1px dashed #e2e8f0; }
   .row:last-child { border-bottom:0; }
   .k { color:var(--muted); font-size:13px; }
+  textarea { min-height:70px; font-family:inherit; resize:vertical; }
+  .full { grid-column:1 / -1; }
+  .actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }
+  .actions .primary { flex:1 1 220px; font-size:16px; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  #pdfMsg { margin-top:8px; }
   .v { font-weight:600; font-size:13px; text-align:right; }
   @media print {
     body { background:#fff; color:#000; }
@@ -64,6 +70,14 @@
 
   <div class="card no-print">
     <h2>1. Patient & Measurement</h2>
+    <div class="grid" style="margin-bottom:12px;">
+      <div class="full"><label>Report header</label><input type="text" id="rptHeader" oninput="saveHeader()"></div>
+      <div><label>Patient name (optional)</label><input type="text" id="ptName" autocomplete="off"></div>
+      <div><label>Patient ID / UHID (optional)</label><input type="text" id="ptId" autocomplete="off"></div>
+      <div><label>Test date</label><input type="date" id="testDate"></div>
+      <div><label>Referring doctor (optional)</label><input type="text" id="refDoc"></div>
+      <div class="full"><label>Device (optional)</label><input type="text" id="device" placeholder="e.g. PulmoScan / tremoflo / Resmon"></div>
+    </div>
     <div class="grid">
       <div><label>Age (years)</label><input type="number" id="age" placeholder="e.g. 35" oninput="calculate()"></div>
       <div><label>Sex</label>
@@ -105,6 +119,11 @@
     </div>
   </div>
 
+  <div class="card no-print">
+    <label>Remarks / Interpretation (optional)</label>
+    <textarea id="remarks" placeholder="Clinical remarks / interpretation to appear on the report"></textarea>
+  </div>
+
   <div class="card">
     <h2>3. Results</h2>
     <div id="output" class="result">
@@ -113,9 +132,16 @@
     <p class="muted" style="margin-top:12px;font-size:11px;">
       ERS 2020 quality control: CoV of R5 should be &lt;10% in adults and &lt;15% in children. Z-scores beyond ±1.645 are outside the normal range. BDR thresholds: R5 decrease ≥40%, X5 increase ≥50%, AX decrease ≥80%.
     </p>
+    <div class="actions no-print">
+      <button class="primary" id="pdfBtn" onclick="downloadPDF()">Download PDF Report</button>
+      <button class="secondary" onclick="window.print()">Print</button>
+    </div>
+    <p id="pdfMsg" class="muted no-print"></p>
   </div>
 </main>
 
+<script src="vendor/jspdf.umd.min.js"></script>
+<script src="vendor/jspdf.plugin.autotable.min.js"></script>
 <script>
 /* ---------- PWA ---------- */
 if ("serviceWorker" in navigator) {
@@ -273,8 +299,150 @@ function calculate() {
   $('output').innerHTML = html;
 }
 
+/* ---------- Report fields ---------- */
+const DEFAULT_HEADER = 'Dr Abhishek Singh, Pulmonologist';
+function saveHeader() { try { localStorage.setItem('fotReportHeader', $('rptHeader').value); } catch (e) {} }
+function initReportFields() {
+  let h = null; try { h = localStorage.getItem('fotReportHeader'); } catch (e) {}
+  $('rptHeader').value = h !== null ? h : DEFAULT_HEADER;
+  const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  $('testDate').value = d.toISOString().slice(0, 10);
+}
+function updatePdfBtn() {
+  const ok = num('age') && num('height') && num('weight');
+  $('pdfBtn').disabled = !ok;
+  $('pdfMsg').textContent = ok ? '' : 'Enter age, height and weight to enable the PDF report.';
+}
+
+/* ---------- PDF report (uses same equations/thresholds as calculate()) ---------- */
+function downloadPDF() {
+  const age = num('age'), sex = $('sex').value, height = num('height'), weight = num('weight');
+  if (!age || !height || !weight) { updatePdfBtn(); alert('Please enter age, height and weight first.'); return; }
+  if (!window.jspdf || !window.jspdf.jsPDF) { alert('PDF library not loaded. Please reload the page.'); return; }
+  const ethnicity = $('ethnicity') ? $('ethnicity').value : 'indo_european';
+  let pred, refLabel;
+  if (age >= 18) { pred = adultPredicted(sex, height, weight, age); refLabel = 'Indian Adult (De et al., 2020)'; }
+  else { pred = pediatricPredicted(sex, age, height, weight, ethnicity); refLabel = 'Indian Pediatric PulmoScan (Aggarwal et al., 2023)'; }
+  const r5 = num('r5'), x5 = num('x5'), ax = num('ax'), fres = num('fres');
+  const r5post = num('r5post'), x5post = num('x5post'), axpost = num('axpost');
+  const ethLabel = {indo_european:'Indo-European', dravidian:'Dravidian', mixed:'Mixed'}[ethnicity];
+
+  const rows = [];
+  if (r5 !== null) {
+    const z = (r5 - pred.r5) / pred.r5see;
+    const label = z > 1.645 ? 'High' : z < -1.645 ? 'Low' : 'Normal';
+    rows.push(['R5 (cmH2O/L/s)', String(r5), pred.r5.toFixed(2), z.toFixed(2),
+      `ULN ${(pred.r5 + 1.645 * pred.r5see).toFixed(2)} / LLN ${(pred.r5 - 1.645 * pred.r5see).toFixed(2)}`, label]);
+  }
+  if (x5 !== null) {
+    const z = (x5 - pred.x5) / pred.x5see;
+    const label = z > 1.645 ? 'High (less negative, abnormal)' : z < -1.645 ? 'Low (more negative, abnormal)' : 'Normal';
+    rows.push(['X5 (cmH2O/L/s)', String(x5), pred.x5.toFixed(2), z.toFixed(2),
+      `LLN ${(pred.x5 - 1.645 * pred.x5see).toFixed(2)}`, label]);
+  }
+  if (ax !== null) rows.push(['AX (cmH2O/L)', String(ax), '-', '-', '-', 'No population reference in this set; interpret with clinical context']);
+  if (fres !== null) rows.push(['Fres (Hz)', String(fres), '-', '-', '-', fres > 12 ? 'Elevated (High)' : 'Normal']);
+
+  const bdr = [];
+  if (r5 !== null && r5post !== null && r5 !== 0) { const c = ((r5post - r5) / r5) * 100; bdr.push(['R5', String(r5), String(r5post), c.toFixed(1) + '%', 'Decrease >= 40%', c <= -40 ? 'Positive' : 'Negative']); }
+  if (x5 !== null && x5post !== null && x5 !== 0) { const c = ((x5post - x5) / Math.abs(x5)) * 100; bdr.push(['X5', String(x5), String(x5post), c.toFixed(1) + '%', 'Increase >= 50%', c >= 50 ? 'Positive' : 'Negative']); }
+  if (ax !== null && axpost !== null && ax !== 0) { const c = ((axpost - ax) / ax) * 100; bdr.push(['AX', String(ax), String(axpost), c.toFixed(1) + '%', 'Decrease >= 80%', c <= -80 ? 'Positive' : 'Negative']); }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const W = doc.internal.pageSize.getWidth(), M = 14;
+  const blue = [30, 58, 138];
+  doc.setFillColor(...blue); doc.rect(0, 0, W, 26, 'F');
+  doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(18);
+  doc.text('FOT Report', M, 12);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
+  doc.text($('rptHeader').value.trim() || DEFAULT_HEADER, M, 20);
+  doc.setFontSize(9); doc.text('Forced Oscillation Technique', W - M, 12, { align: 'right' });
+  doc.setTextColor(0);
+
+  const v = id => $(id).value.trim() || '-';
+  const td = $('testDate').value ? $('testDate').value.split('-').reverse().join('-') : '-';
+  const details = [
+    ['Patient name', v('ptName'), 'Patient ID / UHID', v('ptId')],
+    ['Age', age + ' years', 'Sex', sex === 'male' ? 'Male' : 'Female'],
+    ['Height', height + ' cm', 'Weight', weight + ' kg'],
+    ['Test date', td, 'Referring doctor', v('refDoc')],
+    ['Device', v('device'), age < 18 ? 'Ethnicity' : '', age < 18 ? ethLabel : ''],
+  ];
+  doc.autoTable({ startY: 32, body: details, theme: 'plain', margin: { left: M, right: M },
+    styles: { fontSize: 10, cellPadding: 1.4 },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 32 }, 2: { fontStyle: 'bold', cellWidth: 36 } } });
+  let y = doc.lastAutoTable.finalY + 4;
+  doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.text('Reference set used: ', M, y);
+  doc.setFont('helvetica', 'normal'); doc.text(refLabel, M + 34, y);
+  if (age < 18) { y += 5; doc.setFontSize(8.5); doc.setTextColor(180, 83, 9);
+    doc.text('Warning: pediatric equations are device-specific (PulmoScan) and may cause misdiagnosis with other FOT devices.', M, y); doc.setTextColor(0); }
+  y += 5;
+
+  const colorInterp = data => {
+    if (data.section === 'body' && data.column.index === data.table.columns.length - 1) {
+      const t = String(data.cell.raw);
+      if (/^(High|Low|Elevated|Positive)/.test(t)) { data.cell.styles.textColor = [185, 28, 28]; data.cell.styles.fontStyle = 'bold'; }
+      else if (/^(Normal|Negative)/.test(t)) { data.cell.styles.textColor = [4, 120, 87]; data.cell.styles.fontStyle = 'bold'; }
+    }
+  };
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...blue); doc.text('Results', M, y + 2); doc.setTextColor(0);
+  doc.autoTable({ startY: y + 4, margin: { left: M, right: M },
+    head: [['Parameter', 'Measured', 'Predicted', 'Z-score', 'LLN / ULN', 'Interpretation']],
+    body: rows.length ? rows : [['No measured values entered', '', '', '', '', '']],
+    headStyles: { fillColor: blue }, styles: { fontSize: 9.5, cellPadding: 2 },
+    columnStyles: { 4: { cellWidth: 38 }, 5: { cellWidth: 46 } }, didParseCell: colorInterp });
+  y = doc.lastAutoTable.finalY + 6;
+
+  if (bdr.length) {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...blue); doc.text('Bronchodilator Response', M, y); doc.setTextColor(0);
+    doc.autoTable({ startY: y + 2, margin: { left: M, right: M },
+      head: [['Parameter', 'Pre-BD', 'Post-BD', 'Change', 'Threshold', 'Result']], body: bdr,
+      headStyles: { fillColor: blue }, styles: { fontSize: 9.5, cellPadding: 2 }, didParseCell: colorInterp });
+    y = doc.lastAutoTable.finalY + 6;
+  }
+
+  const H = doc.internal.pageSize.getHeight();
+  const ensure = need => { if (y + need > H - 20) { doc.addPage(); y = 20; } };
+  const remarks = $('remarks').value.trim();
+  if (remarks) {
+    const lines = doc.setFontSize(10).splitTextToSize(remarks, W - 2 * M);
+    ensure(10 + lines.length * 5);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...blue); doc.text('Remarks / Interpretation', M, y); doc.setTextColor(0);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.text(lines, M, y + 6);
+    y += 8 + lines.length * 4.6;
+  }
+
+  const qc = 'ERS 2020 quality control: CoV of R5 should be <10% in adults and <15% in children. Z-scores beyond \u00B11.645 are outside the normal range. BDR thresholds: R5 decrease \u226540%, X5 increase \u226550%, AX decrease \u226580%.'
+    .replace('\u00B1', '+/-').replace(/\u2265/g, '>=');
+  const qcl = doc.setFontSize(8.5).splitTextToSize(qc, W - 2 * M);
+  ensure(40);
+  doc.setFont('helvetica', 'normal'); doc.setTextColor(100); doc.text(qcl, M, y + 2);
+  y += 4 + qcl.length * 4;
+  doc.setFont('helvetica', 'bold'); doc.setTextColor(0); doc.text('For clinical decision support only.', M, y + 1);
+
+  const sy = Math.max(y + 22, H - 34);
+  doc.setDrawColor(0); doc.line(W - M - 60, sy, W - M, sy);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+  doc.text('Signature', W - M - 30, sy + 5, { align: 'center' });
+  doc.text($('rptHeader').value.trim() || DEFAULT_HEADER, W - M - 30, sy + 10, { align: 'center' });
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const gen = `${pad(now.getDate())}-${pad(now.getMonth() + 1)}-${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const pages = doc.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) { doc.setPage(i); doc.setFontSize(8); doc.setTextColor(120);
+    doc.text('Generated: ' + gen, M, H - 8); doc.text(`Page ${i} of ${pages}`, W - M, H - 8, { align: 'right' }); }
+
+  const safe = s => s.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '');
+  const fname = `FOT_Report_${safe($('ptName').value.trim()) || 'Patient'}_${$('testDate').value || now.toISOString().slice(0, 10)}.pdf`;
+  doc.save(fname);
+}
+
 /* init */
+initReportFields();
+document.addEventListener('input', updatePdfBtn);
 calculate();
+updatePdfBtn();
 </script>
 </body>
 </html>
