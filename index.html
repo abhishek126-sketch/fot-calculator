@@ -76,7 +76,7 @@
       <div><label>Patient ID / UHID (optional)</label><input type="text" id="ptId" autocomplete="off"></div>
       <div><label>Test date</label><input type="date" id="testDate"></div>
       <div><label>Referring doctor (optional)</label><input type="text" id="refDoc"></div>
-      <div class="full"><label>Device (optional)</label><input type="text" id="device" placeholder="e.g. PulmoScan / tremoflo / Resmon"></div>
+      <div class="full"><label>Device model / serial (optional, free text)</label><input type="text" id="device" placeholder="e.g. tremoflo C-100 #1234"></div>
     </div>
     <div class="grid">
       <div><label>Age (years)</label><input type="number" id="age" placeholder="e.g. 35" oninput="calculate()"></div>
@@ -88,8 +88,19 @@
       </div>
       <div><label>Height (cm)</label><input type="number" id="height" step="0.1" placeholder="e.g. 170" oninput="calculate()"></div>
       <div><label>Weight (kg)</label><input type="number" id="weight" step="0.1" placeholder="e.g. 70" oninput="calculate()"></div>
+      <div id="deviceWrap" style="display:none; grid-column: 1 / -1;">
+        <label>Pediatric reference set (choose the device the test was done on)</label>
+        <select id="pedDevice" onchange="calculate()">
+          <option value="pulmoscan">PulmoScan - Aggarwal et al. 2023 (Indian, 9-19 y)</option>
+          <option value="resmon_de">Resmon Pro Full - De et al. 2020 (Indian, 5-17 y, 96-178 cm)</option>
+          <option value="resmon_ducharme">Resmon Pro Full - Ducharme et al. 2022 (Canadian, 3-17 y, 100-189 cm)</option>
+          <option value="tremoflo">tremoflo C-100 - Ducharme et al. 2022 + 2024 correction (Canadian, 3-17 y, 100-189 cm)</option>
+        </select>
+        <p class="muted" id="deviceRef" style="margin:6px 0 0;"></p>
+        <div id="rangeWarn" class="note" style="display:none;margin:8px 0 0;background:#fff7ed;border-color:#fdba74;color:#9a3412;"></div>
+      </div>
       <div id="ethnicityWrap" style="display:none; grid-column: 1 / -1;">
-        <label>Ethnicity (required for pediatric equations)</label>
+        <label>Ethnicity (required for PulmoScan equations)</label>
         <select id="ethnicity" onchange="calculate()">
           <option value="indo_european">Indo-European</option>
           <option value="dravidian">Dravidian</option>
@@ -98,8 +109,8 @@
       </div>
     </div>
     <div class="note" style="margin-top:12px;">
-      <strong>Reference sets:</strong> Adults (≥18y) use Indian adult equations. Children (9–17y) use PulmoScan Indian pediatric equations (Aggarwal et al., 2023).<br>
-      <em>*Warning: The pediatric equations are device-specific (PulmoScan) and may cause misdiagnosis if used with other FOT devices.</em>
+      <strong>Reference sets:</strong> Adults (≥18y) use Indian adult equations. Children (&lt;18y) use the device-specific equations chosen in the selector.<br>
+      <em>*Warning: oscillometry reference equations are device-specific. Using equations from a different device may cause misdiagnosis.</em>
     </div>
   </div>
 
@@ -107,6 +118,7 @@
     <h2>2. Measured FOT Values</h2>
     <div class="grid3">
       <div><label>R5 (cmH₂O/L/s)</label><input type="number" id="r5" step="0.01" placeholder="e.g. 4.5" oninput="calculate()"></div>
+      <div><label id="rHiLabel">R19 / R20 (cmH₂O/L/s)</label><input type="number" id="rhi" step="0.01" placeholder="e.g. 3.8" oninput="calculate()"></div>
       <div><label>X5 (cmH₂O/L/s)</label><input type="number" id="x5" step="0.01" placeholder="e.g. -1.2" oninput="calculate()"></div>
       <div><label>AX (cmH₂O/L)</label><input type="number" id="ax" step="0.01" placeholder="e.g. 6.0" oninput="calculate()"></div>
       <div><label>Fres (Hz)</label><input type="number" id="fres" step="0.1" placeholder="e.g. 12.0" oninput="calculate()"></div>
@@ -142,6 +154,7 @@
 
 <script src="vendor/jspdf.umd.min.js"></script>
 <script src="vendor/jspdf.plugin.autotable.min.js"></script>
+<script src="equations.js"></script>
 <script>
 /* ---------- PWA ---------- */
 if ("serviceWorker" in navigator) {
@@ -155,147 +168,77 @@ const $ = id => document.getElementById(id);
 const num = id => { const v = parseFloat($(id).value); return isNaN(v) ? null : v; };
 const esc = s => String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 
-/* ---------- Adult Equations ---------- */
-function adultPredicted(sex, heightCm, weightKg, ageY) {
-  const ht = heightCm;
-  const wt = weightKg;
-  const age = ageY;
+/* ---------- Equations live in equations.js (FOTEQ) ---------- */
+const ETH = {indo_european:'Indo-European', dravidian:'Dravidian', mixed:'Mixed'};
+const f2 = v => (v === null || v === undefined || isNaN(v)) ? '-' : v.toFixed(2);
 
-  if (sex === 'male') {
-    return {
-      r5: 10.035 - 0.057 * ht + 0.036 * wt + 0.008 * age,
-      r5see: 0.961,
-      x5: -3.334 + 0.018 * ht - 0.009 * wt - 0.004 * age,
-      x5see: 0.529
-    };
-  } else {
-    return {
-      r5: 9.697 - 0.046 * ht + 0.033 * wt,
-      r5see: 0.991,
-      x5: -4.40 + 0.020 * ht,
-      x5see: 0.646
-    };
-  }
+/* Single source of truth for screen + PDF */
+function evaluate() {
+  const age = num('age'), sex = $('sex').value, height = num('height'), weight = num('weight');
+  if (!age || !height || !weight) return null;
+  const ped = age < 18;
+  const devId = $('pedDevice').value;
+  const dev = ped ? FOTEQ.DEVICES[devId] : FOTEQ.ADULT;
+  const eth = $('ethnicity').value;
+  const pred = dev.predict(sex, age, height, weight, eth);
+  const warnings = ped ? FOTEQ.rangeWarnings(dev, age, height) : [];
+  const hiKey = ped && dev.rLabel === 'R20' ? 'r20' : 'r19';
+  const hiName = ped ? dev.rLabel : 'R19/R20';
+  const m = { r5: num('r5'), rhi: num('rhi'), x5: num('x5'), ax: num('ax'), fres: num('fres'),
+              r5post: num('r5post'), x5post: num('x5post'), axpost: num('axpost') };
+  const rows = [];
+  const add = (name, unit, meas, p, kind) => {
+    if (meas === null) return;
+    if (!p) { rows.push({ name, unit, meas, pred: null, z: null, limit: '-', interp:
+      kind === 'fres' ? (meas > 12 ? 'Elevated (>12 Hz, no device reference)' : 'No device reference') : 'No equation in this reference set' }); return; }
+    const z = p.z(meas);
+    let interp, limit;
+    if (kind === 'x') { limit = `LLN ${f2(p.lln)}`; interp = z < -Z_CUT ? 'Low (more negative, abnormal)' : z > Z_CUT ? 'High (less negative)' : 'Normal'; }
+    else { limit = `ULN ${f2(p.uln)} / LLN ${f2(p.lln)}`; interp = z > Z_CUT ? 'High' : z < -Z_CUT ? 'Low' : 'Normal'; }
+    rows.push({ name, unit, meas, pred: p.pred, z, limit, interp });
+  };
+  add('R5', 'cmH2O/L/s', m.r5, pred.r5, 'r');
+  add(hiName, 'cmH2O/L/s', m.rhi, pred[hiKey], 'r');
+  if (m.r5 !== null && m.rhi !== null) add('R5-' + hiName.replace('R', ''), 'cmH2O/L/s', +(m.r5 - m.rhi).toFixed(2), pred.r5_19 && hiKey === 'r19' ? pred.r5_19 : null, 'r');
+  add('X5', 'cmH2O/L/s', m.x5, pred.x5, 'x');
+  add('AX', 'cmH2O/L', m.ax, pred.ax, 'r');
+  add('Fres', 'Hz', m.fres, pred.fres, 'fres');
+  const bdr = [];
+  if (m.r5 !== null && m.r5post !== null && m.r5 !== 0) { const c = (m.r5post - m.r5) / m.r5 * 100; bdr.push(['R5', m.r5, m.r5post, c, 'Decrease >= 40%', c <= -40]); }
+  if (m.x5 !== null && m.x5post !== null && m.x5 !== 0) { const c = (m.x5post - m.x5) / Math.abs(m.x5) * 100; bdr.push(['X5', m.x5, m.x5post, c, 'Increase >= 50%', c >= 50]); }
+  if (m.ax !== null && m.axpost !== null && m.ax !== 0) { const c = (m.axpost - m.ax) / m.ax * 100; bdr.push(['AX', m.ax, m.axpost, c, 'Decrease >= 80%', c <= -80]); }
+  return { age, sex, height, weight, ped, devId, dev, eth, warnings, rows, bdr, hiName,
+    refShort: ped ? dev.short : FOTEQ.ADULT.short, refFull: ped ? dev.ref : 'Indian adult equations (De et al., 2020)',
+    deviceLabel: ped ? dev.label : 'Adult equations (as in previous versions)' };
 }
+const Z_CUT = 1.645;
 
-/* ---------- Pediatric Equations (Exact from Table 2) ---------- */
-function pediatricPredicted(sex, ageY, heightCm, weightKg, ethnicity) {
-  const DR = ethnicity === 'dravidian' ? 1 : 0;
-  const MD = ethnicity === 'mixed' ? 1 : 0;
-  const ht = heightCm;
-  const wt = weightKg;
-  const age = ageY;
-
-  if (sex === 'female') {
-    return {
-      r5: 8.8344827 - 0.1137591 * age - 1.6881474 * DR - 0.8102314 * MD,
-      r5see: 1.483,
-      x5: -16.38333893 + 0.07841934 * ht - 1.03452124 * DR + 2.03995200 * MD,
-      x5see: 1.434
-    };
-  } else {
-    return {
-      r5: 18.48199557 - 0.08317625 * age - 0.07854747 * ht + 0.03745560 * wt - 1.17853282 * DR - 1.07899031 * MD,
-      r5see: 1.329,
-      x5: -21.6628413 + 0.1184544 * ht - 0.0259044 * wt - 0.6991041 * DR + 1.4647050 * MD,
-      x5see: 1.216
-    };
-  }
-}
-
-/* ---------- Calculate ---------- */
 function calculate() {
   const age = num('age');
-  const sex = $('sex').value;
-  const height = num('height');
-  const weight = num('weight');
-  const ethnicity = $('ethnicity') ? $('ethnicity').value : 'indo_european';
-
-  if (!age || !height || !weight) {
-    $('output').innerHTML = '<p class="muted">Enter age, height, and weight to calculate predicted values.</p>';
-    return;
-  }
-
-  if (age < 18) {
-    $('ethnicityWrap').style.display = 'block';
-  } else {
-    $('ethnicityWrap').style.display = 'none';
-  }
-
-  let pred;
-  let refLabel;
-  if (age >= 18) {
-    pred = adultPredicted(sex, height, weight, age);
-    refLabel = 'Indian Adult (De et al., 2020)';
-  } else {
-    pred = pediatricPredicted(sex, age, height, weight, ethnicity);
-    refLabel = 'Indian Pediatric PulmoScan (Aggarwal et al., 2023)';
-  }
-
-  const r5 = num('r5');
-  const x5 = num('x5');
-  const ax = num('ax');
-  const fres = num('fres');
-  const r5post = num('r5post');
-  const x5post = num('x5post');
-  const axpost = num('axpost');
-
+  const ped = age !== null && age < 18;
+  $('deviceWrap').style.display = ped ? 'block' : 'none';
+  const dev = FOTEQ.DEVICES[$('pedDevice').value];
+  $('ethnicityWrap').style.display = ped && dev.needsEthnicity ? 'block' : 'none';
+  $('deviceRef').textContent = 'Source: ' + dev.ref;
+  $('rHiLabel').textContent = (ped ? dev.rLabel : 'R19 / R20') + ' (cmH\u2082O/L/s)';
+  const r = evaluate();
+  if (!r) { $('rangeWarn').style.display = 'none';
+    $('output').innerHTML = '<p class="muted">Enter age, height, and weight to calculate predicted values.</p>'; return; }
+  $('rangeWarn').style.display = r.warnings.length ? 'block' : 'none';
+  $('rangeWarn').innerHTML = r.warnings.length ? '<strong>Out of range:</strong> ' + r.warnings.map(esc).join(' ') + ' Predicted values are extrapolated; interpret with caution.' : '';
   const row = (k, v) => `<div class="row"><span class="k">${esc(k)}</span><span class="v">${String(v)}</span></div>`;
-
-  let html = `<h3 style="margin-top:0;font-size:14px;">Reference: ${refLabel}</h3>`;
-
-  // R5
-  if (r5 !== null && pred.r5 !== null && pred.r5see) {
-    const z = (r5 - pred.r5) / pred.r5see;
-    const flag = Math.abs(z) > 1.645 ? 'abnormal' : 'normal';
-    const label = z > 1.645 ? 'High' : z < -1.645 ? 'Low' : 'Normal';
-    html += row('R5 measured', `${r5} cmH₂O/L/s`);
-    html += row('R5 predicted', `${pred.r5.toFixed(2)} cmH₂O/L/s`);
-    html += row('R5 z-score', `${z.toFixed(2)} <span class="pill ${flag}">${label}</span>`);
-    html += row('R5 ULN / LLN', `${(pred.r5 + 1.645 * pred.r5see).toFixed(2)} / ${(pred.r5 - 1.645 * pred.r5see).toFixed(2)}`);
-  } else if (r5 !== null) {
-    html += row('R5 measured', `${r5} cmH₂O/L/s (predicted equation not available)`) ;
+  let html = `<h3 style="margin-top:0;font-size:14px;">Reference: ${esc(r.refShort)}</h3>`;
+  html += `<p class="muted" style="margin:-6px 0 8px;">Device: ${esc(r.deviceLabel)}${r.ped && r.dev.needsEthnicity ? ' &middot; Ethnicity: ' + ETH[r.eth] : ''}<br>${esc(r.refFull)}</p>`;
+  if (r.warnings.length) html += `<p class="pill abnormal" style="display:block;border-radius:8px;margin-bottom:8px;">Out of study range: ${esc(r.warnings.join(' '))}</p>`;
+  for (const x of r.rows) {
+    html += row(`${x.name} measured`, `${x.meas} ${x.unit}`);
+    if (x.pred === null) { html += row(`${x.name}`, esc(x.interp)); continue; }
+    const flag = x.interp === 'Normal' ? 'normal' : 'abnormal';
+    html += row(`${x.name} predicted`, `${f2(x.pred)} ${x.unit}`);
+    html += row(`${x.name} z-score`, `${f2(x.z)} <span class="pill ${flag}">${esc(x.interp)}</span>`);
+    html += row(`${x.name} limits`, x.limit);
   }
-
-  // X5
-  if (x5 !== null && pred.x5 !== null && pred.x5see) {
-    const z = (x5 - pred.x5) / pred.x5see;
-    const flag = Math.abs(z) > 1.645 ? 'abnormal' : 'normal';
-    const label = z > 1.645 ? 'Less negative (abnormal)' : z < -1.645 ? 'More negative (abnormal)' : 'Normal';
-    html += row('X5 measured', `${x5} cmH₂O/L/s`);
-    html += row('X5 predicted', `${pred.x5.toFixed(2)} cmH₂O/L/s`);
-    html += row('X5 z-score', `${z.toFixed(2)} <span class="pill ${flag}">${label}</span>`);
-    html += row('X5 LLN (more negative)', `${(pred.x5 - 1.645 * pred.x5see).toFixed(2)}`);
-  } else if (x5 !== null) {
-    html += row('X5 measured', `${x5} cmH₂O/L/s (predicted equation not available)`);
-  }
-
-  // AX and Fres
-  if (ax !== null) {
-    html += row('AX measured', `${ax} cmH₂O/L (interpret with clinical context; no population reference in this set)`);
-  }
-  if (fres !== null) {
-    const fresFlag = fres > 12 ? 'abnormal' : 'normal';
-    html += row('Fres measured', `${fres} Hz <span class="pill ${fresFlag}">${fres > 12 ? 'Elevated' : 'Normal'}</span>`);
-  }
-
-  // Bronchodilator Response
-  if (r5 !== null && r5post !== null && r5 !== 0) {
-    const change = ((r5post - r5) / r5) * 100;
-    const flag = change <= -40 ? 'abnormal' : 'normal';
-    html += row('R5 BDR', `${change.toFixed(1)}% <span class="pill ${flag}">${change <= -40 ? 'Positive' : 'Negative'}</span>`);
-  }
-  if (x5 !== null && x5post !== null && x5 !== 0) {
-    const change = ((x5post - x5) / Math.abs(x5)) * 100; 
-    const flag = change >= 50 ? 'abnormal' : 'normal';
-    html += row('X5 BDR', `${change.toFixed(1)}% <span class="pill ${flag}">${change >= 50 ? 'Positive' : 'Negative'}</span>`);
-  }
-  if (ax !== null && axpost !== null && ax !== 0) {
-    const change = ((axpost - ax) / ax) * 100;
-    const flag = change <= -80 ? 'abnormal' : 'normal';
-    html += row('AX BDR', `${change.toFixed(1)}% <span class="pill ${flag}">${change <= -80 ? 'Positive' : 'Negative'}</span>`);
-  }
-
+  for (const b of r.bdr) html += row(`${b[0]} BDR`, `${b[3].toFixed(1)}% <span class="pill ${b[5] ? 'abnormal' : 'normal'}">${b[5] ? 'Positive' : 'Negative'}</span>`);
   $('output').innerHTML = html;
 }
 
@@ -319,35 +262,9 @@ function downloadPDF() {
   const age = num('age'), sex = $('sex').value, height = num('height'), weight = num('weight');
   if (!age || !height || !weight) { updatePdfBtn(); alert('Please enter age, height and weight first.'); return; }
   if (!window.jspdf || !window.jspdf.jsPDF) { alert('PDF library not loaded. Please reload the page.'); return; }
-  const ethnicity = $('ethnicity') ? $('ethnicity').value : 'indo_european';
-  let pred, refLabel;
-  if (age >= 18) { pred = adultPredicted(sex, height, weight, age); refLabel = 'Indian Adult (De et al., 2020)'; }
-  else { pred = pediatricPredicted(sex, age, height, weight, ethnicity); refLabel = 'Indian Pediatric PulmoScan (Aggarwal et al., 2023)'; }
-  const r5 = num('r5'), x5 = num('x5'), ax = num('ax'), fres = num('fres');
-  const r5post = num('r5post'), x5post = num('x5post'), axpost = num('axpost');
-  const ethLabel = {indo_european:'Indo-European', dravidian:'Dravidian', mixed:'Mixed'}[ethnicity];
-
-  const rows = [];
-  if (r5 !== null) {
-    const z = (r5 - pred.r5) / pred.r5see;
-    const label = z > 1.645 ? 'High' : z < -1.645 ? 'Low' : 'Normal';
-    rows.push(['R5 (cmH2O/L/s)', String(r5), pred.r5.toFixed(2), z.toFixed(2),
-      `ULN ${(pred.r5 + 1.645 * pred.r5see).toFixed(2)} / LLN ${(pred.r5 - 1.645 * pred.r5see).toFixed(2)}`, label]);
-  }
-  if (x5 !== null) {
-    const z = (x5 - pred.x5) / pred.x5see;
-    const label = z > 1.645 ? 'High (less negative, abnormal)' : z < -1.645 ? 'Low (more negative, abnormal)' : 'Normal';
-    rows.push(['X5 (cmH2O/L/s)', String(x5), pred.x5.toFixed(2), z.toFixed(2),
-      `LLN ${(pred.x5 - 1.645 * pred.x5see).toFixed(2)}`, label]);
-  }
-  if (ax !== null) rows.push(['AX (cmH2O/L)', String(ax), '-', '-', '-', 'No population reference in this set; interpret with clinical context']);
-  if (fres !== null) rows.push(['Fres (Hz)', String(fres), '-', '-', '-', fres > 12 ? 'Elevated (High)' : 'Normal']);
-
-  const bdr = [];
-  if (r5 !== null && r5post !== null && r5 !== 0) { const c = ((r5post - r5) / r5) * 100; bdr.push(['R5', String(r5), String(r5post), c.toFixed(1) + '%', 'Decrease >= 40%', c <= -40 ? 'Positive' : 'Negative']); }
-  if (x5 !== null && x5post !== null && x5 !== 0) { const c = ((x5post - x5) / Math.abs(x5)) * 100; bdr.push(['X5', String(x5), String(x5post), c.toFixed(1) + '%', 'Increase >= 50%', c >= 50 ? 'Positive' : 'Negative']); }
-  if (ax !== null && axpost !== null && ax !== 0) { const c = ((axpost - ax) / ax) * 100; bdr.push(['AX', String(ax), String(axpost), c.toFixed(1) + '%', 'Decrease >= 80%', c <= -80 ? 'Positive' : 'Negative']); }
-
+  const r = evaluate();
+  const rows = r.rows.map(x => [`${x.name} (${x.unit})`, String(x.meas), x.pred === null ? '-' : f2(x.pred), x.z === null ? '-' : f2(x.z), x.limit, x.interp]);
+  const bdr = r.bdr.map(b => [b[0], String(b[1]), String(b[2]), b[3].toFixed(1) + '%', b[4], b[5] ? 'Positive' : 'Negative']);
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const W = doc.internal.pageSize.getWidth(), M = 14;
@@ -367,16 +284,21 @@ function downloadPDF() {
     ['Age', age + ' years', 'Sex', sex === 'male' ? 'Male' : 'Female'],
     ['Height', height + ' cm', 'Weight', weight + ' kg'],
     ['Test date', td, 'Referring doctor', v('refDoc')],
-    ['Device', v('device'), age < 18 ? 'Ethnicity' : '', age < 18 ? ethLabel : ''],
+    ['Device (free text)', v('device'), r.ped && r.dev.needsEthnicity ? 'Ethnicity' : '', r.ped && r.dev.needsEthnicity ? ETH[r.eth] : ''],
   ];
   doc.autoTable({ startY: 32, body: details, theme: 'plain', margin: { left: M, right: M },
     styles: { fontSize: 10, cellPadding: 1.4 },
     columnStyles: { 0: { fontStyle: 'bold', cellWidth: 32 }, 2: { fontStyle: 'bold', cellWidth: 36 } } });
   let y = doc.lastAutoTable.finalY + 4;
-  doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.text('Reference set used: ', M, y);
-  doc.setFont('helvetica', 'normal'); doc.text(refLabel, M + 34, y);
-  if (age < 18) { y += 5; doc.setFontSize(8.5); doc.setTextColor(180, 83, 9);
-    doc.text('Warning: pediatric equations are device-specific (PulmoScan) and may cause misdiagnosis with other FOT devices.', M, y); doc.setTextColor(0); }
+  doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.text('Reference device: ', M, y);
+  doc.setFont('helvetica', 'normal'); doc.text(r.deviceLabel, M + 34, y);
+  y += 5; doc.setFont('helvetica', 'bold'); doc.text('Reference set: ', M, y);
+  doc.setFont('helvetica', 'normal'); const refl = doc.setFontSize(8.5).splitTextToSize(r.refFull, W - 2 * M - 34); doc.text(refl, M + 34, y);
+  y += refl.length * 4;
+  doc.setFontSize(8.5); doc.setTextColor(180, 83, 9);
+  if (r.warnings.length) { y += 1; doc.text('OUT OF STUDY RANGE: ' + r.warnings.join(' ') + ' Predicted values are extrapolated.', M, y, { maxWidth: W - 2 * M }); y += 5; }
+  if (r.ped) { doc.text('Reference equations are device-specific; they apply only to tests done on the device named above.', M, y + 1); y += 2; }
+  doc.setTextColor(0);
   y += 5;
 
   const colorInterp = data => {
