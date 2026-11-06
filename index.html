@@ -38,6 +38,12 @@
   .normal { background:#d1fae5; color:var(--ok); }
   .abnormal { background:#fee2e2; color:var(--danger); }
   .caution { background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; font-weight:600; }
+  .chk { display:flex; flex-wrap:wrap; gap:8px 14px; font-size:13px; font-weight:500; }
+  .chk label { font-weight:500; display:flex; align-items:center; gap:6px; }
+  .smoke-row { display:grid; grid-template-columns:1.2fr 1fr 1fr; gap:8px; margin-top:6px; }
+  @media (max-width:640px){ .smoke-row { grid-template-columns:1fr; } }
+  .ht-ft { display:none; grid-template-columns:1fr 1fr; gap:8px; }
+  .ht-ft.on { display:grid; }
   .muted { color:var(--muted); font-size:12px; }
   .note { background:#eff6ff; border:1px solid #bfdbfe; color:var(--accent);
           border-radius:10px; padding:8px 10px; font-size:12.5px; margin:0 0 12px; }
@@ -87,8 +93,24 @@
           <option value="female">Female</option>
         </select>
       </div>
-      <div><label>Height (cm)</label><input type="number" id="height" step="0.1" placeholder="e.g. 170" oninput="calculate()"></div>
+      <div class="full">
+        <label>Height</label>
+        <div class="chk" style="margin-bottom:6px;">
+          <label><input type="radio" name="htUnit" value="cm" checked onchange="onHeightUnitChange()"> cm</label>
+          <label><input type="radio" name="htUnit" value="ft" onchange="onHeightUnitChange()"> feet + inches</label>
+        </div>
+        <div id="htCmWrap"><input type="number" id="height" step="0.1" placeholder="e.g. 170" oninput="onHeightCmInput()"></div>
+        <div id="htFtWrap" class="ht-ft">
+          <input type="number" id="heightFt" min="0" step="1" placeholder="Feet" oninput="onHeightFtInput()">
+          <input type="number" id="heightIn" min="0" max="11.9" step="0.1" placeholder="Inches" oninput="onHeightFtInput()">
+        </div>
+        <p class="muted" id="htBoth" style="margin:4px 0 0;"></p>
+      </div>
       <div><label>Weight (kg)</label><input type="number" id="weight" step="0.1" placeholder="e.g. 70" oninput="calculate()"></div>
+      <div class="full"><label>BMI (auto)</label>
+        <input type="text" id="bmiOut" readonly placeholder="Enter height and weight">
+        <p class="muted" id="bmiCite" style="margin:4px 0 0;"></p>
+      </div>
       <div id="adultDeviceWrap" style="display:none; grid-column: 1 / -1;">
         <label>Adult reference set / device</label>
         <select id="adultDevice" onchange="calculate()">
@@ -122,6 +144,57 @@
     <div class="note" style="margin-top:12px;">
       <strong>Reference sets:</strong> Adults (≥18y) use Indian adult equations. Children (&lt;18y) use the device-specific equations chosen in the selector.<br>
       <em>*Warning: oscillometry reference equations are device-specific. Using equations from a different device may cause misdiagnosis.</em>
+    </div>
+  </div>
+
+
+  <div class="card no-print">
+    <h2>1b. Smoking history</h2>
+    <div class="grid">
+      <div><label>Smoking status</label>
+        <select id="smokeStatus" onchange="onSmokeChange()">
+          <option value="never">Never</option>
+          <option value="current">Current</option>
+          <option value="former">Former</option>
+        </select>
+      </div>
+      <div id="quitYearWrap" style="display:none;"><label>Year quit</label><input type="number" id="quitYear" min="1950" max="2100" placeholder="e.g. 2020" oninput="onSmokeChange()"></div>
+    </div>
+    <div id="smokeTypesWrap" style="display:none;margin-top:10px;">
+      <label>Type (select all that apply)</label>
+      <div class="chk" id="smokeTypeChecks">
+        <label><input type="checkbox" value="cigarette" onchange="onSmokeChange()"> Cigarette</label>
+        <label><input type="checkbox" value="bidi" onchange="onSmokeChange()"> Bidi</label>
+        <label><input type="checkbox" value="mixed" onchange="onSmokeChange()"> Mixed (cig + bidi)</label>
+        <label><input type="checkbox" value="hookah" onchange="onSmokeChange()"> Hookah</label>
+        <label><input type="checkbox" value="chillum" onchange="onSmokeChange()"> Chillum / ganja (cannabis)</label>
+        <label><input type="checkbox" value="smokeless" onchange="onSmokeChange()"> Smokeless tobacco</label>
+        <label><input type="checkbox" value="other" onchange="onSmokeChange()"> Other</label>
+      </div>
+      <div id="smokeDetailRows"></div>
+      <p class="muted" id="smokeSummary" style="margin-top:8px;"></p>
+      <p class="muted" style="font-size:11px;">Cigarette pack-years = (cig/day ÷ 20) × years. Bidi/mixed reported as smoking index (sticks/day × years); no validated bidi↔cigarette pack-year equivalence is assumed. Cannabis = joint-years, kept separate. Sources shown on the PDF.</p>
+    </div>
+  </div>
+
+  <div class="card no-print">
+    <h2>1c. Saved tests (this browser only)</h2>
+    <p class="muted">Tests are stored in localStorage on this device — nothing is uploaded. Use export/import JSON to back up or move data.</p>
+    <div class="actions" style="margin-top:8px;">
+      <button type="button" class="secondary" onclick="saveCurrentTest()">Save current test</button>
+      <button type="button" class="secondary" onclick="exportTests()">Export JSON backup</button>
+      <button type="button" class="secondary" onclick="document.getElementById('importFile').click()">Import JSON</button>
+      <input type="file" id="importFile" accept="application/json,.json" style="display:none" onchange="importTests(event)">
+    </div>
+    <p id="saveMsg" class="muted"></p>
+    <div id="compareWrap" style="margin-top:10px;display:none;">
+      <label>Compare with a previous saved test for this patient</label>
+      <select id="prevTestSelect"></select>
+      <div class="actions" style="margin-top:8px;">
+        <button type="button" class="primary" onclick="runComparison()">Compare with previous</button>
+        <button type="button" class="secondary" id="cmpPdfBtn" onclick="downloadComparisonPDF()" disabled>Download comparison PDF</button>
+      </div>
+      <div id="compareOut" class="result" style="margin-top:10px;"></div>
     </div>
   </div>
 
@@ -166,6 +239,9 @@
 <script src="vendor/jspdf.umd.min.js"></script>
 <script src="vendor/jspdf.plugin.autotable.min.js"></script>
 <script src="equations.js"></script>
+<script src="clinical.js"></script>
+<script src="storage.js"></script>
+<script src="features.js"></script>
 <script>
 /* ---------- PWA ---------- */
 if ("serviceWorker" in navigator) {
@@ -185,8 +261,11 @@ const f2 = v => (v === null || v === undefined || isNaN(v)) ? '-' : v.toFixed(2)
 
 /* Single source of truth for screen + PDF */
 function evaluate() {
+  syncHeightToCm();
   const age = num('age'), sex = $('sex').value, height = num('height'), weight = num('weight');
   if (!age || !height || !weight) return null;
+  const bmiInfo = getBmiInfo(weight, height);
+  const smoke = getSmokeExposure();
   const ped = age < 18;
   const eth = $('ethnicity').value;
   let devId, dev;
@@ -229,7 +308,8 @@ function evaluate() {
   if (m.r5 !== null && m.r5post !== null && m.r5 !== 0) { const c = (m.r5post - m.r5) / m.r5 * 100; bdr.push(['R5', m.r5, m.r5post, c, 'Decrease >= 40%', c <= -40]); }
   if (m.x5 !== null && m.x5post !== null && m.x5 !== 0) { const c = (m.x5post - m.x5) / Math.abs(m.x5) * 100; bdr.push(['X5', m.x5, m.x5post, c, 'Increase >= 50%', c >= 50]); }
   if (m.ax !== null && m.axpost !== null && m.ax !== 0) { const c = (m.axpost - m.ax) / m.ax * 100; bdr.push(['AX', m.ax, m.axpost, c, 'Decrease >= 80%', c <= -80]); }
-  return { age, sex, height, weight, ped, devId, dev, eth, warnings, approxNotes, rows, bdr, hiName,
+  const ftin = FOTCLIN.cmToFeetInches(height);
+  return { age, sex, height, weight, heightFtIn: ftin, bmiInfo, smoke, ped, devId, dev, eth, warnings, approxNotes, rows, bdr, hiName,
     refShort: dev.short, refFull: ped ? (dev.ref || '') : (dev.ref || 'De et al., Lung India 2020;37:30-36 (Resmon Pro Full, Indian adults)'),
     deviceLabel: dev.label, approx: !!dev.approx };
 }
@@ -254,6 +334,8 @@ function calculate() {
   if ((ped && $('pedDevice').value === 'antlia') || (!ped && $('adultDevice').value === 'antlia')) {
     if (!$('device').value.trim()) $('device').value = 'Antlia FOT (Icaltech, India)';
   }
+  updateBmiField();
+  updateHeightBothLabel();
   const r = evaluate();
   if (!r) { $('rangeWarn').style.display = 'none';
     $('output').innerHTML = '<p class="muted">Enter age, height, and weight to calculate predicted values.</p>'; return; }
@@ -277,7 +359,18 @@ function calculate() {
     html += row(`${x.name} limits`, x.limit);
   }
   for (const b of r.bdr) html += row(`${b[0]} BDR`, `${b[3].toFixed(1)}% <span class="pill ${b[5] ? 'abnormal' : 'normal'}">${b[5] ? 'Positive' : 'Negative'}</span>`);
+  if (r.bmiInfo) {
+    html += row('BMI', `${r.bmiInfo.value} kg/m² — Asian/Indian: ${esc(r.bmiInfo.asian)} (WHO: ${esc(r.bmiInfo.who)})`);
+  }
+  html += row('Height', `${f2(r.height)} cm (${r.heightFtIn.ft} ft ${r.heightFtIn.inch} in)`);
+  if (r.smoke && r.smoke.summaryLines) {
+    html += `<h3 style="font-size:13px;margin:12px 0 6px;color:var(--accent);">Smoking</h3>`;
+    r.smoke.summaryLines.forEach(l => { html += row('Exposure', esc(l)); });
+  }
   $('output').innerHTML = html;
+  updateBmiField();
+  updateHeightBothLabel();
+  refreshCompareSelect();
 }
 
 /* ---------- Report fields ---------- */
@@ -317,12 +410,15 @@ function downloadPDF() {
 
   const v = id => $(id).value.trim() || '-';
   const td = $('testDate').value ? $('testDate').value.split('-').reverse().join('-') : '-';
+  const ft = r.heightFtIn;
+  const bmiStr = r.bmiInfo ? (r.bmiInfo.value + ' (' + r.bmiInfo.asian + ' Asian; WHO ' + r.bmiInfo.who + ')') : '-';
   const details = [
     ['Patient name', v('ptName'), 'Patient ID / UHID', v('ptId')],
     ['Age', age + ' years', 'Sex', sex === 'male' ? 'Male' : 'Female'],
-    ['Height', height + ' cm', 'Weight', weight + ' kg'],
-    ['Test date', td, 'Referring doctor', v('refDoc')],
-    ['Device (free text)', v('device'), r.ped && r.dev.needsEthnicity ? 'Ethnicity' : '', r.ped && r.dev.needsEthnicity ? ETH[r.eth] : ''],
+    ['Height', height + ' cm (' + ft.ft + "' " + ft.inch + '" )', 'Weight', weight + ' kg'],
+    ['BMI', bmiStr, 'Test date', td],
+    ['Referring doctor', v('refDoc'), 'Device (free text)', v('device')],
+    [r.ped && r.dev.needsEthnicity ? 'Ethnicity' : '', r.ped && r.dev.needsEthnicity ? ETH[r.eth] : '', '', ''],
   ];
   doc.autoTable({ startY: 32, body: details, theme: 'plain', margin: { left: M, right: M },
     styles: { fontSize: 10, cellPadding: 1.4 },
@@ -369,6 +465,26 @@ function downloadPDF() {
 
   const H = doc.internal.pageSize.getHeight();
   const ensure = need => { if (y + need > H - 20) { doc.addPage(); y = 20; } };
+  // BMI + smoking
+  ensure(28);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...blue); doc.text('Anthropometry & smoking', M, y); doc.setTextColor(0);
+  y += 5;
+  const bmiCite = (r.bmiInfo && FOTCLIN.BMI_SOURCES.asian) || '';
+  const smokeLines = (r.smoke && r.smoke.summaryLines) ? r.smoke.summaryLines : ['Never smoker'];
+  const anthBody = [
+    ['BMI (Asian/Indian cut-offs)', r.bmiInfo ? (r.bmiInfo.value + ' kg/m2 — ' + r.bmiInfo.asian) : '-'],
+    ['BMI (WHO, optional)', r.bmiInfo ? r.bmiInfo.who : '-'],
+    ...smokeLines.map(l => ['Smoking', l])
+  ];
+  doc.autoTable({ startY: y, margin: { left: M, right: M }, body: anthBody, theme: 'plain',
+    styles: { fontSize: 9, cellPadding: 1.2 }, columnStyles: { 0: { fontStyle: 'bold', cellWidth: 55 } } });
+  y = doc.lastAutoTable.finalY + 2;
+  const cites = [FOTCLIN.BMI_SOURCES.asian, FOTCLIN.SMOKE_SOURCES.packYears, FOTCLIN.SMOKE_SOURCES.smokingIndex, FOTCLIN.SMOKE_SOURCES.bidiNote, FOTCLIN.SMOKE_SOURCES.cannabis];
+  const citeTxt = cites.join(' ');
+  const citeLines = doc.setFontSize(7.5).splitTextToSize('Sources: ' + citeTxt, W - 2 * M);
+  ensure(citeLines.length * 3.5 + 4);
+  doc.setTextColor(100); doc.setFont('helvetica', 'normal'); doc.text(citeLines, M, y); y += citeLines.length * 3.2 + 4; doc.setTextColor(0);
+
   const remarks = $('remarks').value.trim();
   if (remarks) {
     const lines = doc.setFontSize(10).splitTextToSize(remarks, W - 2 * M);
@@ -405,8 +521,13 @@ function downloadPDF() {
 /* init */
 initReportFields();
 document.addEventListener('input', updatePdfBtn);
+document.getElementById('ptId').addEventListener('input', refreshCompareSelect);
+document.getElementById('ptName').addEventListener('input', refreshCompareSelect);
+onHeightUnitChange();
+onSmokeChange();
 calculate();
 updatePdfBtn();
+refreshCompareSelect();
 </script>
 </body>
 </html>
