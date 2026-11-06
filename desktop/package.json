@@ -1,7 +1,7 @@
 {
   "name": "fot-calculator",
   "productName": "FOT Calculator",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Forced Oscillation Technique reference calculator (offline desktop)",
   "author": "Dr Abhishek Singh",
   "license": "UNLICENSED",
@@ -11,7 +11,7 @@
     "start": "electron .",
     "dist": "electron-builder --win nsis --x64",
     "dist:dir": "electron-builder --win --x64 --dir",
-    "test": "node --test ../tests/equations.test.js ../tests/clinical.test.js ../tests/merge.test.js ../tests/folder-sync.test.js ./tests/detect-drive.test.js",
+    "test": "node --test ../tests/equations.test.js ../tests/clinical.test.js ../tests/merge.test.js ../tests/folder-sync.test.js ./tests/*.test.js",
     "prepare-web": "node scripts/copy-web.js",
     "predist": "npm run prepare-web"
   },
@@ -26,7 +26,8 @@
     "files": [
       "main.js",
       "preload.js",
-      "package.json"
+      "package.json",
+      "lib/**/*"
     ],
     "extraResources": [
       {
@@ -56,7 +57,9 @@
       "shortcutName": "FOT Calculator",
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
-      "license": "LICENSE.txt"
+      "license": "LICENSE.txt",
+      "include": "build/installer.nsh",
+      "artifactName": "FOT-Calculator-Setup-${version}.${ext}"
     },
     "publish": null
   },

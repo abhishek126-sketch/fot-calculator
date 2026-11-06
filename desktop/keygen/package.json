@@ -1,0 +1,56 @@
+{
+  "name": "fot-key-generator",
+  "productName": "FOT Key Generator",
+  "version": "1.0.0",
+  "description": "Private licence key generator for FOT Calculator (do not redistribute)",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "prepare-key": "node scripts/embed-key.js",
+    "predist": "npm run prepare-key",
+    "dist": "electron-builder --win nsis --x64"
+  },
+  "build": {
+    "appId": "com.abhishek126.fotkeygen",
+    "productName": "FOT Key Generator",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "embedded-private.pem",
+      "package.json",
+      "lib/licence.js"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "FOT-Key-Generator-Setup-${version}.${ext}",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "FOT Key Generator",
+      "include": "build/installer.nsh"
+    }
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  }
+}

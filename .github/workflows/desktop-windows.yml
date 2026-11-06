@@ -5,14 +5,6 @@ on:
   push:
     tags:
       - 'desktop-v*'
-    paths:
-      - 'desktop/**'
-      - '.github/workflows/desktop-windows.yml'
-      - 'index.html'
-      - 'features.js'
-      - 'storage.js'
-      - 'folder-sync.js'
-      - 'desktop-ui.js'
 
 permissions:
   contents: write
@@ -43,7 +35,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npm run dist
 
-      - name: Verify PE/NSIS artifact
+      - name: Verify PE + SHA-256
         working-directory: desktop
         shell: pwsh
         run: |
@@ -52,38 +44,33 @@ jobs:
           Write-Host "Artifact:" $exe.FullName $exe.Length
           $bytes = [System.IO.File]::ReadAllBytes($exe.FullName)[0..1]
           if (-not ($bytes[0] -eq 0x4D -and $bytes[1] -eq 0x5A)) { throw "Not a PE MZ executable" }
+          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
+          $shaFile = "$($exe.FullName).sha256"
+          Set-Content -Path $shaFile -Value "$hash  $($exe.Name)`n" -NoNewline
+          # Also write companion for release naming
+          Copy-Item $shaFile "dist/$($exe.BaseName).sha256"
+          Write-Host "SHA256 $hash"
           Write-Host "MZ header OK"
 
-      - name: Folder I/O smoke (no GUI)
+      - name: Smoke — licence + users + folder
         working-directory: desktop
         shell: pwsh
         run: |
-          $tmp = Join-Path $env:TEMP "fot-reports-smoke"
+          node --test tests/licence.test.js tests/users.test.js tests/paths.test.js tests/updates.test.js
+          $tmp = Join-Path $env:TEMP "fot-reports-smoke-v11"
           New-Item -ItemType Directory -Force -Path $tmp | Out-Null
-          $rec = @{
-            id = "t_smoke_1"
-            ptId = "SMOKE"
-            ptName = "Smoke Test"
-            testDate = "2026-11-07"
-            updatedAt = "2026-11-07T00:00:00.000Z"
-            measured = @{ r5 = 4.2 }
-          } | ConvertTo-Json -Depth 5
-          $jsonPath = Join-Path $tmp "SMOKE_2026-11-07_t_smoke_1.json"
-          Set-Content -Path $jsonPath -Value $rec -Encoding UTF8
-          # Minimal PDF bytes
-          [IO.File]::WriteAllBytes((Join-Path $tmp "SMOKE_2026-11-07_t_smoke_1.pdf"), [Text.Encoding]::ASCII.GetBytes("%PDF-1.1`n1 0 obj<<>>endobj`ntrailer<<>>`n%%EOF`n"))
-          $files = Get-ChildItem $tmp
-          Write-Host ($files | Out-String)
-          if (-not (Test-Path $jsonPath)) { throw "JSON missing" }
-          $parsed = Get-Content $jsonPath -Raw | ConvertFrom-Json
-          if ($parsed.id -ne "t_smoke_1") { throw "JSON content mismatch" }
+          $rec = '{"id":"t_smoke_1","ptId":"SMOKE","ptName":"Smoke","testDate":"2026-11-07","updatedAt":"2026-11-07T00:00:00.000Z","measured":{"r5":4.2}}'
+          Set-Content -Path (Join-Path $tmp "SMOKE_2026-11-07_t_smoke_1.json") -Value $rec -Encoding UTF8
+          if (-not (Test-Path (Join-Path $tmp "SMOKE_2026-11-07_t_smoke_1.json"))) { throw "JSON missing" }
           Write-Host "Folder smoke OK"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: FOT-Calculator-Setup
-          path: desktop/dist/FOT-Calculator-Setup-*.exe
+          path: |
+            desktop/dist/FOT-Calculator-Setup-*.exe
+            desktop/dist/FOT-Calculator-Setup-*.sha256
 
       - name: Read version
         id: ver
@@ -101,11 +88,18 @@ jobs:
           fail_on_unmatched_files: true
           make_latest: true
           body: |
-            Offline Windows x64 installer (NSIS, per-user, unsigned).
-            App: FOT Calculator — Reports folder sync via Google Drive for Desktop / any folder.
-            Browser Google OAuth sync is disabled in this desktop build; the GitHub Pages web app is unchanged.
-          files: desktop/dist/FOT-Calculator-Setup-*.exe
+            Offline Windows x64 installer (NSIS, per-user under Documents\FOT Calculator\App, unsigned).
+
+            **v1.1.0**
+            - 1-year Ed25519 licence keys (name-bound)
+            - Multi-user logins (scrypt passwords; reports separated per user; not encrypted at rest)
+            - On-demand updates from GitHub releases with SHA-256 check; Updates\YYYY-MM-DD_vX.Y.Z\; Share update folder
+            - Reports folder: Google Drive My Drive\FOT Reports if present, else Documents\FOT Calculator\Reports
+
+            Verify installer: `certutil -hashfile FOT-Calculator-Setup-1.1.0.exe SHA256` against the `.sha256` asset.
+          files: |
+            desktop/dist/FOT-Calculator-Setup-*.exe
+            desktop/dist/FOT-Calculator-Setup-*.sha256
           generate_release_notes: false
-          preserve_order: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,56 @@
+name: Key Generator (private artifact)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Require private key secret
+        shell: pwsh
+        run: |
+          if (-not $env:FOT_LICENCE_PRIVATE_KEY) { throw "Set repo secret FOT_LICENCE_PRIVATE_KEY" }
+        env:
+          FOT_LICENCE_PRIVATE_KEY: ${{ secrets.FOT_LICENCE_PRIVATE_KEY }}
+
+      - name: Install keygen deps
+        working-directory: desktop/keygen
+        run: |
+          npm install --no-fund --no-audit
+          # electron postinstall
+          npx electron --version
+
+      - name: Embed key + build
+        working-directory: desktop/keygen
+        env:
+          FOT_LICENCE_PRIVATE_KEY: ${{ secrets.FOT_LICENCE_PRIVATE_KEY }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run dist
+
+      - name: Verify PE
+        working-directory: desktop/keygen
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem dist -Filter "FOT-Key-Generator-Setup-*.exe" | Select-Object -First 1
+          if (-not $exe) { throw "Missing keygen installer" }
+          $bytes = [System.IO.File]::ReadAllBytes($exe.FullName)[0..1]
+          if (-not ($bytes[0] -eq 0x4D -and $bytes[1] -eq 0x5A)) { throw "Not PE" }
+          Write-Host "OK" $exe.Name $exe.Length
+
+      - name: Upload short-lived artifact (1 day)
+        uses: actions/upload-artifact@v4
+        with:
+          name: FOT-Key-Generator-Setup-PRIVATE
+          path: desktop/keygen/dist/FOT-Key-Generator-Setup-*.exe
+          retention-days: 1

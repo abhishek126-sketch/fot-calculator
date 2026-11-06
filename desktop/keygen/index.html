@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>FOT Key Generator</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; color: #0f172a; }
+    label { display: block; font-weight: 600; margin-top: 12px; }
+    input, textarea { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; }
+    button { margin-top: 12px; margin-right: 8px; padding: 8px 14px; cursor: pointer; }
+    .out { margin-top: 16px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 12px; border-radius: 8px; }
+    code { word-break: break-all; font-size: 12px; }
+    .muted { color: #64748b; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <h1>FOT Key Generator</h1>
+  <p class="muted">Private tool — issues 1-year Ed25519 licence keys. Keys are saved under Documents\FOT Calculator\Licences\.</p>
+  <label>Doctor name</label>
+  <input id="name" placeholder="Dr …">
+  <label>Notes (optional)</label>
+  <input id="notes" placeholder="Clinic / invoice #">
+  <button id="go">Generate 1-year key</button>
+  <button id="open">Open Licences folder</button>
+  <div class="out" id="out" style="display:none;">
+    <div><strong>Expires:</strong> <span id="exp"></span></div>
+    <div style="margin-top:8px;"><code id="key"></code></div>
+    <button id="copy">Copy key</button>
+    <p class="muted" id="file"></p>
+  </div>
+  <script>
+    document.getElementById('go').onclick = async () => {
+      try {
+        const r = await window.keygen.issue({
+          name: document.getElementById('name').value,
+          notes: document.getElementById('notes').value
+        });
+        document.getElementById('out').style.display = 'block';
+        document.getElementById('exp').textContent = r.payload.expires;
+        document.getElementById('key').textContent = r.key;
+        document.getElementById('file').textContent = 'Saved: ' + r.file;
+      } catch (e) { alert(e.message || e); }
+    };
+    document.getElementById('copy').onclick = async () => {
+      const t = document.getElementById('key').textContent;
+      await navigator.clipboard.writeText(t);
+      alert('Copied');
+    };
+    document.getElementById('open').onclick = () => window.keygen.openLicences();
+  </script>
+</body>
+</html>

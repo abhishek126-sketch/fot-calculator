@@ -2,3 +2,12 @@ desktop/node_modules/
 desktop/dist/
 desktop/app-web/
 *.exe
+# Licensing — NEVER commit private keys
+**/fot-licence-private.pem
+**/licensing/keys/
+fot-desktop/
+desktop/dist-private/
+**/dist-private/
+desktop/keygen/embedded-private.pem
+desktop/keygen/node_modules/
+desktop/keygen/dist/

@@ -3,3 +3,7 @@ dist/
 *.log
 .DS_Store
 app-web/
+keygen/embedded-private.pem
+keygen/node_modules/
+keygen/dist/
+keygen/app-web/
