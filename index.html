@@ -252,7 +252,9 @@
 <script src="vendor/jspdf.plugin.autotable.min.js"></script>
 <script src="equations.js"></script>
 <script src="clinical.js"></script>
+<script src="config.js"></script>
 <script src="storage.js"></script>
+<script src="drive-sync.js"></script>
 <script src="features.js"></script>
 <script>
 /* ---------- PWA ---------- */
@@ -383,7 +385,6 @@ function calculate() {
   updateBmiField();
   updateHeightBothLabel();
   refreshCompareSelect();
-if (window.FOTDRIVE) FOTDRIVE.init();
 }
 
 /* ---------- Report fields ---------- */
