@@ -178,13 +178,25 @@
   </div>
 
   <div class="card no-print">
-    <h2>1c. Saved tests (this browser only)</h2>
-    <p class="muted">Tests are stored in localStorage on this device — nothing is uploaded. Use export/import JSON to back up or move data.</p>
+    <h2>1c. Saved tests &amp; Google Drive sync</h2>
+    <p class="muted">Tests are stored in this browser first. Optional Google Drive sync keeps a backup in <em>your</em> Drive only (scope <code>drive.file</code>) so you can compare on other computers/phones. Nothing is uploaded to GitHub or any clinic server.</p>
     <div class="actions" style="margin-top:8px;">
       <button type="button" class="secondary" onclick="saveCurrentTest()">Save current test</button>
       <button type="button" class="secondary" onclick="exportTests()">Export JSON backup</button>
       <button type="button" class="secondary" onclick="document.getElementById('importFile').click()">Import JSON</button>
       <input type="file" id="importFile" accept="application/json,.json" style="display:none" onchange="importTests(event)">
+    </div>
+    <div id="driveSyncWrap" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border,#e2e8f0);">
+      <label style="display:block;margin-bottom:6px;">Google Drive (cross-device)</label>
+      <div class="actions">
+        <button type="button" class="primary" id="driveSignInBtn" onclick="fotDriveSignIn()">Sign in with Google</button>
+        <button type="button" class="secondary" id="driveSyncBtn" onclick="fotDriveSyncNow()" disabled>Sync now</button>
+        <button type="button" class="secondary" id="driveSignOutBtn" onclick="fotDriveSignOut()" disabled>Sign out</button>
+      </div>
+      <p id="driveSyncStatus" class="muted" style="margin-top:6px;"></p>
+      <p id="driveConfigNote" class="muted" style="display:none;margin-top:4px;font-size:11px;">
+        OAuth client ID not set in <code>config.js</code>. Create a Google Cloud Web client (Drive API + Testing consent with your Gmail as test user; authorized JavaScript origin <code>https://abhishek126-sketch.github.io</code>), paste the client ID into <code>config.js</code>, redeploy. No client secret is used.
+      </p>
     </div>
     <p id="saveMsg" class="muted"></p>
     <div id="compareWrap" style="margin-top:10px;display:none;">
@@ -371,6 +383,7 @@ function calculate() {
   updateBmiField();
   updateHeightBothLabel();
   refreshCompareSelect();
+if (window.FOTDRIVE) FOTDRIVE.init();
 }
 
 /* ---------- Report fields ---------- */
@@ -518,6 +531,10 @@ function downloadPDF() {
   doc.save(fname);
 }
 
+function fotDriveSignIn() { if (window.FOTDRIVE) FOTDRIVE.signIn(); }
+function fotDriveSyncNow() { if (window.FOTDRIVE) FOTDRIVE.syncNow(); }
+function fotDriveSignOut() { if (window.FOTDRIVE) FOTDRIVE.signOut(); }
+
 /* init */
 initReportFields();
 document.addEventListener('input', updatePdfBtn);
@@ -528,6 +545,7 @@ onSmokeChange();
 calculate();
 updatePdfBtn();
 refreshCompareSelect();
+if (window.FOTDRIVE) FOTDRIVE.init();
 </script>
 </body>
 </html>

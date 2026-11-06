@@ -193,8 +193,9 @@
       return;
     }
     FOTSTORE.saveTest(snap);
-    $('saveMsg').textContent = `Saved for “${FOTSTORE.patientKey(snap.ptId, snap.ptName)}” on ${snap.testDate || 'no date'}. Local only.`;
+    $('saveMsg').textContent = `Saved for “${FOTSTORE.patientKey(snap.ptId, snap.ptName)}” on ${snap.testDate || 'no date'}. Local first.`;
     refreshCompareSelect();
+    if (window.FOTDRIVE) FOTDRIVE.onSaveHook();
   }
 
   function exportTests() {
@@ -213,9 +214,10 @@
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        FOTSTORE.importJSON(String(reader.result));
-        $('saveMsg').textContent = 'Import complete (duplicates by id skipped).';
+        const m = FOTSTORE.importJSON(String(reader.result));
+        $('saveMsg').textContent = 'Import complete' + (m && m.conflictCount ? ` (${m.conflictCount} conflict(s) kept both)` : '') + '.';
         refreshCompareSelect();
+        if (window.FOTDRIVE) FOTDRIVE.onSaveHook();
       } catch (e) {
         $('saveMsg').textContent = 'Import failed: ' + e.message;
       }
