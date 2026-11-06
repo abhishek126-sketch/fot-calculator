@@ -199,7 +199,7 @@ function evaluate() {
   }
   const pred = dev.predict(sex, age, height, weight, eth);
   const warnings = ped ? FOTEQ.rangeWarnings(dev, age, height) : [];
-  if (dev.approx && dev.approxNote) warnings.push(dev.approxNote);
+  const approxNotes = (dev.approx && dev.approxNote) ? [dev.approxNote] : [];
   const hiKey = (pred.r20 ? 'r20' : (pred.r19 ? 'r19' : null));
   const hiName = ped ? (dev.rLabel || (hiKey === 'r20' ? 'R20' : 'R19')) : (hiKey === 'r20' ? 'R20' : 'R19/R20');
   const m = { r5: num('r5'), rhi: num('rhi'), x5: num('x5'), ax: num('ax'), fres: num('fres'),
@@ -229,8 +229,8 @@ function evaluate() {
   if (m.r5 !== null && m.r5post !== null && m.r5 !== 0) { const c = (m.r5post - m.r5) / m.r5 * 100; bdr.push(['R5', m.r5, m.r5post, c, 'Decrease >= 40%', c <= -40]); }
   if (m.x5 !== null && m.x5post !== null && m.x5 !== 0) { const c = (m.x5post - m.x5) / Math.abs(m.x5) * 100; bdr.push(['X5', m.x5, m.x5post, c, 'Increase >= 50%', c >= 50]); }
   if (m.ax !== null && m.axpost !== null && m.ax !== 0) { const c = (m.axpost - m.ax) / m.ax * 100; bdr.push(['AX', m.ax, m.axpost, c, 'Decrease >= 80%', c <= -80]); }
-  return { age, sex, height, weight, ped, devId, dev, eth, warnings, rows, bdr, hiName,
-    refShort: dev.short, refFull: ped ? dev.ref : (dev.ref || 'De et al., Lung India 2020;37:30-36 (Resmon Pro Full, Indian adults)'),
+  return { age, sex, height, weight, ped, devId, dev, eth, warnings, approxNotes, rows, bdr, hiName,
+    refShort: dev.short, refFull: ped ? (dev.ref || '') : (dev.ref || 'De et al., Lung India 2020;37:30-36 (Resmon Pro Full, Indian adults)'),
     deviceLabel: dev.label, approx: !!dev.approx };
 }
 
@@ -257,11 +257,16 @@ function calculate() {
   const r = evaluate();
   if (!r) { $('rangeWarn').style.display = 'none';
     $('output').innerHTML = '<p class="muted">Enter age, height, and weight to calculate predicted values.</p>'; return; }
-  $('rangeWarn').style.display = r.warnings.length ? 'block' : 'none';
-  $('rangeWarn').innerHTML = r.warnings.length ? '<strong>Out of range:</strong> ' + r.warnings.map(esc).join(' ') + ' Predicted values are extrapolated; interpret with caution.' : '';
+  const allNotes = [...(r.approxNotes||[]), ...r.warnings];
+  $('rangeWarn').style.display = allNotes.length ? 'block' : 'none';
+  $('rangeWarn').innerHTML = [
+    ...(r.approxNotes||[]).map(n => '<strong>Approximate equations:</strong> ' + esc(n)),
+    ...r.warnings.map(n => '<strong>Out of range:</strong> ' + esc(n) + ' Predicted values are extrapolated; interpret with caution.')
+  ].join('<br>');
   const row = (k, v) => `<div class="row"><span class="k">${esc(k)}</span><span class="v">${String(v)}</span></div>`;
   let html = `<h3 style="margin-top:0;font-size:14px;">Reference: ${esc(r.refShort)}</h3>`;
   html += `<p class="muted" style="margin:-6px 0 8px;">Device: ${esc(r.deviceLabel)}${r.ped && r.dev.needsEthnicity ? ' &middot; Ethnicity: ' + ETH[r.eth] : ''}<br>${esc(r.refFull)}</p>`;
+  if (r.approxNotes && r.approxNotes.length) html += `<p class="pill caution" style="display:block;border-radius:8px;margin-bottom:8px;">${esc(r.approxNotes.join(' '))}</p>`;
   if (r.warnings.length) html += `<p class="pill abnormal" style="display:block;border-radius:8px;margin-bottom:8px;">Out of study range: ${esc(r.warnings.join(' '))}</p>`;
   for (const x of r.rows) {
     html += row(`${x.name} measured`, `${x.meas} ${x.unit}`);
@@ -329,6 +334,10 @@ function downloadPDF() {
   doc.setFont('helvetica', 'normal'); const refl = doc.setFontSize(8.5).splitTextToSize(r.refFull, W - 2 * M - 34); doc.text(refl, M + 34, y);
   y += refl.length * 4;
   doc.setFontSize(8.5); doc.setTextColor(180, 83, 9);
+  if (r.approxNotes && r.approxNotes.length) {
+    y += 1; const al = doc.splitTextToSize('APPROXIMATE (not device-derived): ' + r.approxNotes.join(' '), W - 2 * M);
+    doc.text(al, M, y); y += al.length * 3.8 + 1;
+  }
   if (r.warnings.length) { y += 1; doc.text('OUT OF STUDY RANGE: ' + r.warnings.join(' ') + ' Predicted values are extrapolated.', M, y, { maxWidth: W - 2 * M }); y += 5; }
   if (r.ped) { doc.text('Reference equations are device-specific; they apply only to tests done on the device named above.', M, y + 1); y += 2; }
   doc.setTextColor(0);
