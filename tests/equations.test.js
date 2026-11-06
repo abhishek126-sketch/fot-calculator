@@ -62,3 +62,11 @@ test('Fres 15 Hz is not Elevated when device has no Fres equation', () => {
   assert.ok(!/Elevated/i.test(note));
   assert.ok(!/>\s*12/.test(note));
 });
+
+test('Antlia maps to De equations (no invented coeffs)', () => {
+  const { DEVICES, ADULT_DEVICES } = require('../equations.js');
+  assert.ok(DEVICES.antlia.approx);
+  near(DEVICES.antlia.predict('male', 8, 128, 25).r5.pred, DEVICES.resmon_de.predict('male', 8, 128, 25).r5.pred, 1e-12);
+  near(ADULT_DEVICES.antlia.predict('male', 45, 170, 70).r5.pred, ADULT.predict('male', 45, 170, 70).r5.pred, 1e-12);
+  assert.match(DEVICES.antlia.approxNote, /not derived on Antlia|approximate|Icaltech/i);
+});

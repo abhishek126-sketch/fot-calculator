@@ -89,11 +89,21 @@
       </div>
       <div><label>Height (cm)</label><input type="number" id="height" step="0.1" placeholder="e.g. 170" oninput="calculate()"></div>
       <div><label>Weight (kg)</label><input type="number" id="weight" step="0.1" placeholder="e.g. 70" oninput="calculate()"></div>
+      <div id="adultDeviceWrap" style="display:none; grid-column: 1 / -1;">
+        <label>Adult reference set / device</label>
+        <select id="adultDevice" onchange="calculate()">
+          <option value="de_lungindia">Resmon Pro Full — De et al., Lung India 2020 (Indian adults; device-matched)</option>
+          <option value="antlia">Antlia FOT (Icaltech, India) — uses De Lung India 2020 (approximate; not derived on Antlia)</option>
+        </select>
+        <p class="muted" id="adultDeviceRef" style="margin:6px 0 0;"></p>
+        <div id="adultApproxWarn" class="note" style="display:none;margin:8px 0 0;background:#fff7ed;border-color:#fdba74;color:#9a3412;"></div>
+      </div>
       <div id="deviceWrap" style="display:none; grid-column: 1 / -1;">
         <label>Pediatric reference set (choose the device the test was done on)</label>
         <select id="pedDevice" onchange="calculate()">
           <option value="pulmoscan">PulmoScan - Aggarwal et al. 2023 (Indian, 9-19 y)</option>
           <option value="resmon_de">Resmon Pro Full - De et al. 2020 (Indian, 5-17 y, 96-178 cm)</option>
+          <option value="antlia">Antlia FOT (Icaltech, India) — uses De 2020 Resmon pediatric (approximate)</option>
           <option value="resmon_ducharme">Resmon Pro Full - Ducharme et al. 2022 (Canadian, 3-17 y, 100-189 cm)</option>
           <option value="tremoflo">tremoflo C-100 - Ducharme et al. 2022 + 2024 correction (Canadian, 3-17 y, 100-189 cm)</option>
         </select>
@@ -178,13 +188,20 @@ function evaluate() {
   const age = num('age'), sex = $('sex').value, height = num('height'), weight = num('weight');
   if (!age || !height || !weight) return null;
   const ped = age < 18;
-  const devId = $('pedDevice').value;
-  const dev = ped ? FOTEQ.DEVICES[devId] : FOTEQ.ADULT;
   const eth = $('ethnicity').value;
+  let devId, dev;
+  if (ped) {
+    devId = $('pedDevice').value;
+    dev = FOTEQ.DEVICES[devId];
+  } else {
+    devId = $('adultDevice').value;
+    dev = FOTEQ.ADULT_DEVICES[devId] || FOTEQ.ADULT;
+  }
   const pred = dev.predict(sex, age, height, weight, eth);
   const warnings = ped ? FOTEQ.rangeWarnings(dev, age, height) : [];
-  const hiKey = ped && dev.rLabel === 'R20' ? 'r20' : 'r19';
-  const hiName = ped ? dev.rLabel : 'R19/R20';
+  if (dev.approx && dev.approxNote) warnings.push(dev.approxNote);
+  const hiKey = (pred.r20 ? 'r20' : (pred.r19 ? 'r19' : null));
+  const hiName = ped ? (dev.rLabel || (hiKey === 'r20' ? 'R20' : 'R19')) : (hiKey === 'r20' ? 'R20' : 'R19/R20');
   const m = { r5: num('r5'), rhi: num('rhi'), x5: num('x5'), ax: num('ax'), fres: num('fres'),
               r5post: num('r5post'), x5post: num('x5post'), axpost: num('axpost') };
   const rows = [];
@@ -203,8 +220,8 @@ function evaluate() {
     rows.push({ name, unit, meas, pred: p.pred, z, limit, interp, severity });
   };
   add('R5', 'cmH2O/L/s', m.r5, pred.r5, 'r');
-  add(hiName, 'cmH2O/L/s', m.rhi, pred[hiKey], 'r');
-  if (m.r5 !== null && m.rhi !== null) add('R5-' + hiName.replace('R', ''), 'cmH2O/L/s', +(m.r5 - m.rhi).toFixed(2), pred.r5_19 && hiKey === 'r19' ? pred.r5_19 : null, 'r');
+  add(hiName, 'cmH2O/L/s', m.rhi, hiKey ? pred[hiKey] : null, 'r');
+  if (m.r5 !== null && m.rhi !== null) add('R5-' + (hiName.replace(/^R/, '')), 'cmH2O/L/s', +(m.r5 - m.rhi).toFixed(2), pred.r5_19 || null, 'r');
   add('X5', 'cmH2O/L/s', m.x5, pred.x5, 'x');
   add('AX', 'cmH2O/L', m.ax, pred.ax, 'r');
   add('Fres', 'Hz', m.fres, pred.fres, 'fres');
@@ -213,18 +230,30 @@ function evaluate() {
   if (m.x5 !== null && m.x5post !== null && m.x5 !== 0) { const c = (m.x5post - m.x5) / Math.abs(m.x5) * 100; bdr.push(['X5', m.x5, m.x5post, c, 'Increase >= 50%', c >= 50]); }
   if (m.ax !== null && m.axpost !== null && m.ax !== 0) { const c = (m.axpost - m.ax) / m.ax * 100; bdr.push(['AX', m.ax, m.axpost, c, 'Decrease >= 80%', c <= -80]); }
   return { age, sex, height, weight, ped, devId, dev, eth, warnings, rows, bdr, hiName,
-    refShort: ped ? dev.short : FOTEQ.ADULT.short, refFull: ped ? (dev.ref) : 'De et al., Lung India 2020;37:30-36 (Resmon Pro Full, Indian adults)',
-    deviceLabel: ped ? dev.label : FOTEQ.ADULT.label };
+    refShort: dev.short, refFull: ped ? dev.ref : (dev.ref || 'De et al., Lung India 2020;37:30-36 (Resmon Pro Full, Indian adults)'),
+    deviceLabel: dev.label, approx: !!dev.approx };
 }
 
 function calculate() {
   const age = num('age');
   const ped = age !== null && age < 18;
   $('deviceWrap').style.display = ped ? 'block' : 'none';
-  const dev = FOTEQ.DEVICES[$('pedDevice').value];
-  $('ethnicityWrap').style.display = ped && dev.needsEthnicity ? 'block' : 'none';
-  $('deviceRef').textContent = 'Source: ' + dev.ref;
-  $('rHiLabel').textContent = (ped ? dev.rLabel : 'R19 / R20') + ' (cmH\u2082O/L/s)';
+  $('adultDeviceWrap').style.display = (age !== null && !ped) ? 'block' : 'none';
+  const pedDev = FOTEQ.DEVICES[$('pedDevice').value];
+  const adultDev = FOTEQ.ADULT_DEVICES[$('adultDevice').value];
+  const dev = ped ? pedDev : adultDev;
+  $('ethnicityWrap').style.display = ped && pedDev.needsEthnicity ? 'block' : 'none';
+  if (ped) $('deviceRef').textContent = 'Source: ' + pedDev.ref;
+  if (!ped && adultDev) {
+    $('adultDeviceRef').textContent = adultDev.approx ? ('Note: ' + adultDev.approxNote) : ('Source: De et al., Lung India 2020;37:30-36');
+    $('adultApproxWarn').style.display = adultDev.approx ? 'block' : 'none';
+    $('adultApproxWarn').textContent = adultDev.approx ? adultDev.approxNote : '';
+  }
+  $('rHiLabel').textContent = (ped ? (pedDev.rLabel || 'R19') : 'R19 / R20') + ' (cmH\u2082O/L/s)';
+  // Prefill free-text device when Antlia selected
+  if ((ped && $('pedDevice').value === 'antlia') || (!ped && $('adultDevice').value === 'antlia')) {
+    if (!$('device').value.trim()) $('device').value = 'Antlia FOT (Icaltech, India)';
+  }
   const r = evaluate();
   if (!r) { $('rangeWarn').style.display = 'none';
     $('output').innerHTML = '<p class="muted">Enter age, height, and weight to calculate predicted values.</p>'; return; }

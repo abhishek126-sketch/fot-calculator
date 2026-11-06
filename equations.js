@@ -84,6 +84,19 @@
           ax: sqrtm(4.2293625 - 0.0201357 * h, 0.378, K),
           fres: lin(q(12.1902218, 0.3074905, -0.0016839, h), 3.5470232 + 0.0081112 * h) };
       }
+    },
+    antlia: {
+      label: 'Antlia FOT (Icaltech, India) — approximate mapping',
+      ref: 'No Antlia-specific reference equations published. Mapped to De et al. Indian J Pediatr 2020;87:192-199 Table 2 (Resmon Pro Full, Indian children). Device identified in Mandal et al. Lung India 2025;42:87-90 (doi:10.4103/lungindia.lungindia_413_24) as Antlia FOT (Icaltech, India); that study reported R5, R20, R5-R20, X5, AX, Fres in cmH2O·s/L but used fixed cut-offs, not Antlia-derived predicted equations. APPROXIMATE: not derived on Antlia; Antlia reports R20 while De predicts R19.',
+      short: 'Antlia (approx. De et al. 2020 Indian Resmon pediatric)',
+      age: [5, 17], height: [96, 178], rLabel: 'R20', needsEthnicity: false, needsWeight: true,
+      approx: true,
+      approxNote: 'Antlia FOT (Icaltech, India): no device-specific equations found. Using De et al. 2020 Indian Resmon Pro Full pediatric equations as an approximate population match. Antlia outputs R20; this equation set predicts R19 — interpret high-frequency R with caution. Z-scores remain one-sided (ERS).',
+      params: ['r5', 'r19', 'r5_19', 'x5'],
+      predict(sex, age, ht, wt) {
+        // Same coefficients as resmon_de (De 2020 Table 2). Do not invent Antlia coeffs.
+        return DEVICES.resmon_de.predict(sex, age, ht, wt);
+      }
     }
   };
 
@@ -122,6 +135,26 @@
     return w;
   }
 
-  const api = { DEVICES, ADULT, K, Z_CUT, interpretZ, rangeWarnings };
+
+  const ADULT_DEVICES = {
+    de_lungindia: Object.assign({}, ADULT, {
+      id: 'de_lungindia',
+      ref: 'De et al., Lung India 2020;37:30-36 (Resmon Pro Full, Indian adults)',
+      approx: false,
+      approxNote: ''
+    }),
+    antlia: {
+      id: 'antlia',
+      label: 'Antlia FOT (Icaltech, India) — approximate mapping to De Lung India 2020',
+      short: 'Antlia adult (approx. De et al., Lung India 2020)',
+      ref: 'Approximate mapping to De et al., Lung India 2020;37:30-36 (Resmon Pro Full). Antlia FOT (Icaltech, India) described in Mandal et al. Lung India 2025;42:87-90 (doi:10.4103/lungindia.lungindia_413_24). No Antlia-derived predicted equations published.',
+      params: ['r5', 'x5'],
+      approx: true,
+      approxNote: 'Antlia FOT (Icaltech, India): no Antlia-specific adult reference equations published (PubMed/EuropePMC search empty for Antlia equations). Using De et al., Lung India 2020;37:30-36 (Resmon Pro Full, Indian adults) as an approximate population match. Not derived on Antlia — interpret with caution. Device parameters in clinical use include R5, R20, X5, AX, Fres (Mandal et al. 2025).',
+      predict: ADULT.predict
+    }
+  };
+
+  const api = { DEVICES, ADULT, ADULT_DEVICES, K, Z_CUT, interpretZ, rangeWarnings };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FOTEQ = api;
 })(this);
