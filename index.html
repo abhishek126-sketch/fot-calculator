@@ -37,6 +37,7 @@
   .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:12px; font-weight:800; }
   .normal { background:#d1fae5; color:var(--ok); }
   .abnormal { background:#fee2e2; color:var(--danger); }
+  .caution { background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; font-weight:600; }
   .muted { color:var(--muted); font-size:12px; }
   .note { background:#eff6ff; border:1px solid #bfdbfe; color:var(--accent);
           border-radius:10px; padding:8px 10px; font-size:12.5px; margin:0 0 12px; }
@@ -142,7 +143,7 @@
       <p class="muted">Enter patient data and measured values above to see results.</p>
     </div>
     <p class="muted" style="margin-top:12px;font-size:11px;">
-      ERS 2020 quality control: CoV of R5 should be &lt;10% in adults and &lt;15% in children. Z-scores beyond ±1.645 are outside the normal range. BDR thresholds: R5 decrease ≥40%, X5 increase ≥50%, AX decrease ≥80%.
+      ERS 2020: CoV of R5 &lt;10% adults / &lt;15% children. Disease flags (one-sided): R5, R5−Rxx, AX (and Fres when referenced) abnormal if z &gt; +1.645 (above ULN); X5 abnormal if z &lt; −1.645 (below LLN, more negative). Values on the other side of ±1.645 are outside the reference range but not obstruction signs. BDR: R5 ↓≥40%, X5 ↑≥50%, AX ↓≥80%.
     </p>
     <div class="actions no-print">
       <button class="primary" id="pdfBtn" onclick="downloadPDF()">Download PDF Report</button>
@@ -189,13 +190,17 @@ function evaluate() {
   const rows = [];
   const add = (name, unit, meas, p, kind) => {
     if (meas === null) return;
-    if (!p) { rows.push({ name, unit, meas, pred: null, z: null, limit: '-', interp:
-      kind === 'fres' ? (meas > 12 ? 'Elevated (>12 Hz, no device reference)' : 'No device reference') : 'No equation in this reference set' }); return; }
+    if (!p) {
+      const note = kind === 'fres'
+        ? 'Measured only — no Fres reference equation for this device'
+        : 'No equation in this reference set';
+      rows.push({ name, unit, meas, pred: null, z: null, limit: '-', interp: note, severity: 'muted' });
+      return;
+    }
     const z = p.z(meas);
-    let interp, limit;
-    if (kind === 'x') { limit = `LLN ${f2(p.lln)}`; interp = z < -Z_CUT ? 'Low (more negative, abnormal)' : z > Z_CUT ? 'High (less negative)' : 'Normal'; }
-    else { limit = `ULN ${f2(p.uln)} / LLN ${f2(p.lln)}`; interp = z > Z_CUT ? 'High' : z < -Z_CUT ? 'Low' : 'Normal'; }
-    rows.push({ name, unit, meas, pred: p.pred, z, limit, interp });
+    const { interp, severity } = FOTEQ.interpretZ(kind === 'fres' ? 'r' : kind, z);
+    const limit = kind === 'x' ? `LLN ${f2(p.lln)} (ULN ${f2(p.uln)})` : `ULN ${f2(p.uln)} / LLN ${f2(p.lln)}`;
+    rows.push({ name, unit, meas, pred: p.pred, z, limit, interp, severity });
   };
   add('R5', 'cmH2O/L/s', m.r5, pred.r5, 'r');
   add(hiName, 'cmH2O/L/s', m.rhi, pred[hiKey], 'r');
@@ -208,10 +213,9 @@ function evaluate() {
   if (m.x5 !== null && m.x5post !== null && m.x5 !== 0) { const c = (m.x5post - m.x5) / Math.abs(m.x5) * 100; bdr.push(['X5', m.x5, m.x5post, c, 'Increase >= 50%', c >= 50]); }
   if (m.ax !== null && m.axpost !== null && m.ax !== 0) { const c = (m.axpost - m.ax) / m.ax * 100; bdr.push(['AX', m.ax, m.axpost, c, 'Decrease >= 80%', c <= -80]); }
   return { age, sex, height, weight, ped, devId, dev, eth, warnings, rows, bdr, hiName,
-    refShort: ped ? dev.short : FOTEQ.ADULT.short, refFull: ped ? dev.ref : 'Indian adult equations (De et al., 2020)',
-    deviceLabel: ped ? dev.label : 'Adult equations (as in previous versions)' };
+    refShort: ped ? dev.short : FOTEQ.ADULT.short, refFull: ped ? (dev.ref) : 'De et al., Lung India 2020;37:30-36 (Resmon Pro Full, Indian adults)',
+    deviceLabel: ped ? dev.label : FOTEQ.ADULT.label };
 }
-const Z_CUT = 1.645;
 
 function calculate() {
   const age = num('age');
@@ -232,8 +236,8 @@ function calculate() {
   if (r.warnings.length) html += `<p class="pill abnormal" style="display:block;border-radius:8px;margin-bottom:8px;">Out of study range: ${esc(r.warnings.join(' '))}</p>`;
   for (const x of r.rows) {
     html += row(`${x.name} measured`, `${x.meas} ${x.unit}`);
-    if (x.pred === null) { html += row(`${x.name}`, esc(x.interp)); continue; }
-    const flag = x.interp === 'Normal' ? 'normal' : 'abnormal';
+    if (x.pred === null) { html += row(`${x.name}`, `<span class="pill caution">${esc(x.interp)}</span>`); continue; }
+    const flag = x.severity === 'abnormal' ? 'abnormal' : x.severity === 'caution' ? 'caution' : 'normal';
     html += row(`${x.name} predicted`, `${f2(x.pred)} ${x.unit}`);
     html += row(`${x.name} z-score`, `${f2(x.z)} <span class="pill ${flag}">${esc(x.interp)}</span>`);
     html += row(`${x.name} limits`, x.limit);
@@ -304,8 +308,9 @@ function downloadPDF() {
   const colorInterp = data => {
     if (data.section === 'body' && data.column.index === data.table.columns.length - 1) {
       const t = String(data.cell.raw);
-      if (/^(High|Low|Elevated|Positive)/.test(t)) { data.cell.styles.textColor = [185, 28, 28]; data.cell.styles.fontStyle = 'bold'; }
-      else if (/^(Normal|Negative)/.test(t)) { data.cell.styles.textColor = [4, 120, 87]; data.cell.styles.fontStyle = 'bold'; }
+      if (/Positive|Above ULN \(abnormal\)|Below LLN \(more negative/.test(t)) { data.cell.styles.textColor = [185, 28, 28]; data.cell.styles.fontStyle = 'bold'; }
+      else if (/^Normal|^Negative/.test(t)) { data.cell.styles.textColor = [4, 120, 87]; data.cell.styles.fontStyle = 'bold'; }
+      else if (/Below LLN|Above ULN \(less negative\)|no Fres reference|No equation|Measured only/i.test(t)) { data.cell.styles.textColor = [71, 85, 105]; }
     }
   };
   doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...blue); doc.text('Results', M, y + 2); doc.setTextColor(0);
@@ -335,8 +340,7 @@ function downloadPDF() {
     y += 8 + lines.length * 4.6;
   }
 
-  const qc = 'ERS 2020 quality control: CoV of R5 should be <10% in adults and <15% in children. Z-scores beyond \u00B11.645 are outside the normal range. BDR thresholds: R5 decrease \u226540%, X5 increase \u226550%, AX decrease \u226580%.'
-    .replace('\u00B1', '+/-').replace(/\u2265/g, '>=');
+  const qc = 'ERS 2020: CoV of R5 <10% adults / <15% children. Disease flags (one-sided): R5, R5-Rxx, AX (and Fres when referenced) abnormal if z > +1.645 (above ULN); X5 abnormal if z < -1.645 (below LLN, more negative). Other-side outliers are outside the reference range but not obstruction signs. BDR: R5 decrease >=40%, X5 increase >=50%, AX decrease >=80%.';
   const qcl = doc.setFontSize(8.5).splitTextToSize(qc, W - 2 * M);
   ensure(40);
   doc.setFont('helvetica', 'normal'); doc.setTextColor(100); doc.text(qcl, M, y + 2);

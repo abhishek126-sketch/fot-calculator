@@ -88,7 +88,7 @@
   };
 
   const ADULT = {
-    label: 'Indian adult equations (De et al., 2020)', short: 'Indian Adult (De et al., 2020)',
+    label: 'Indian adult (Resmon Pro Full) — De et al., Lung India 2020;37:30-36', short: 'Indian Adult (De et al., Lung India 2020;37:30-36)',
     params: ['r5', 'x5'],
     predict(sex, age, ht, wt) {
       if (sex === 'male') return { r5: lin(10.035 - 0.057 * ht + 0.036 * wt + 0.008 * age, 0.961),
@@ -96,6 +96,22 @@
       return { r5: lin(9.697 - 0.046 * ht + 0.033 * wt, 0.991), x5: lin(-4.40 + 0.020 * ht, 0.646) };
     }
   };
+
+
+  const Z_CUT = 1.645;
+  /** One-sided disease rules (ERS/King 2020): R/AX/Fres abnormal if z>+1.645; X5 if z<-1.645. */
+  function interpretZ(kind, z) {
+    if (z === null || z === undefined || Number.isNaN(z)) return { interp: 'No reference', severity: 'muted' };
+    if (kind === 'x') {
+      if (z < -Z_CUT) return { interp: 'Below LLN (more negative, abnormal)', severity: 'abnormal' };
+      if (z > Z_CUT) return { interp: 'Above ULN (less negative), not an obstruction sign', severity: 'caution' };
+      return { interp: 'Normal', severity: 'normal' };
+    }
+    // resistance, AX, Fres (with equation)
+    if (z > Z_CUT) return { interp: 'Above ULN (abnormal)', severity: 'abnormal' };
+    if (z < -Z_CUT) return { interp: 'Below LLN', severity: 'caution' };
+    return { interp: 'Normal', severity: 'normal' };
+  }
 
   function rangeWarnings(dev, age, ht) {
     const w = [];
@@ -106,6 +122,6 @@
     return w;
   }
 
-  const api = { DEVICES, ADULT, K, rangeWarnings };
+  const api = { DEVICES, ADULT, K, Z_CUT, interpretZ, rangeWarnings };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FOTEQ = api;
 })(this);

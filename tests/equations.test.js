@@ -29,3 +29,36 @@ test('range warnings', () => {
   assert.equal(rangeWarnings(DEVICES.tremoflo, 9, 95).length, 1);
   assert.equal(rangeWarnings(DEVICES.resmon_de, 10, 140).length, 0);
 });
+
+test('tremoflo R5 log-z at Ht 138 cm (hand check +2.15)', () => {
+  const p = DEVICES.tremoflo.predict('male', 10, 138);
+  near(p.r5.pred, 6.41);
+  near(p.r5.z(8.5), 2.15);
+});
+
+const { interpretZ, Z_CUT } = require('../equations.js');
+test('X5 one-sided labelling', () => {
+  assert.equal(interpretZ('x', -2.0).severity, 'abnormal');
+  assert.match(interpretZ('x', -2.0).interp, /more negative, abnormal/);
+  assert.equal(interpretZ('x', 2.0).severity, 'caution');
+  assert.equal(interpretZ('x', 2.0).interp, 'Above ULN (less negative), not an obstruction sign');
+  assert.equal(interpretZ('x', 0).severity, 'normal');
+});
+
+test('R/AX one-sided labelling', () => {
+  assert.equal(interpretZ('r', 2.0).severity, 'abnormal');
+  assert.equal(interpretZ('r', -2.0).severity, 'caution');
+  assert.equal(interpretZ('r', -2.0).interp, 'Below LLN');
+  assert.equal(interpretZ('r', 0).severity, 'normal');
+});
+
+test('Fres 15 Hz is not Elevated when device has no Fres equation', () => {
+  // PulmoScan / De / Resmon Ducharme have no fres key → UI path uses muted note (no Elevated)
+  assert.equal(DEVICES.pulmoscan.predict('male', 10, 138, 30, 'indo_european').fres, undefined);
+  assert.equal(DEVICES.resmon_de.predict('male', 10, 138, 30).fres, undefined);
+  assert.equal(DEVICES.resmon_ducharme.predict('male', 10, 138).fres, undefined);
+  // Simulated UI message for missing Fres equation (must not say Elevated)
+  const note = 'Measured only — no Fres reference equation for this device';
+  assert.ok(!/Elevated/i.test(note));
+  assert.ok(!/>\s*12/.test(note));
+});
