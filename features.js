@@ -192,10 +192,63 @@
       $('saveMsg').textContent = 'Enter Patient ID or name so the test can be filed under a patient key.';
       return;
     }
-    FOTSTORE.saveTest(snap);
+    const saved = FOTSTORE.saveTest(snap);
     $('saveMsg').textContent = `Saved for “${FOTSTORE.patientKey(snap.ptId, snap.ptName)}” on ${snap.testDate || 'no date'}. Local first.`;
     refreshCompareSelect();
-    if (window.FOTDRIVE) FOTDRIVE.onSaveHook();
+    if (window.fotDesktop && window.FOTDESKTOP_UI) {
+      // Desktop: skip browser OAuth; write JSON (+ PDF) to Reports folder
+      Promise.resolve(buildPdfBase64ForDesktop()).then(b64 => FOTDESKTOP_UI.persistToFolder(saved, b64));
+    } else if (window.FOTDRIVE) {
+      FOTDRIVE.onSaveHook();
+    }
+  }
+
+  function buildPdfBase64ForDesktop() {
+    try {
+      if (!window.jspdf || !window.jspdf.jsPDF) return null;
+      // Generate the same report PDF into a data URI without triggering download
+      const age = num('age'), height = num('height'), weight = num('weight');
+      if (!age || !height || !weight) return null;
+      const prevSave = window.jspdf.jsPDF.API.save;
+      let captured = null;
+      // Use output('datauristring')
+      const r = typeof evaluate === 'function' ? evaluate() : null;
+      if (!r) return null;
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+      const W = doc.internal.pageSize.getWidth(), M = 14;
+      const blue = [30, 58, 138];
+      doc.setFillColor(...blue); doc.rect(0, 0, W, 22, 'F');
+      doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
+      doc.text('FOT Report', M, 12);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+      doc.text(($('rptHeader') && $('rptHeader').value) || 'FOT Calculator', M, 18);
+      doc.setTextColor(0);
+      const rows = r.rows.map(x => [x.name, String(x.meas), x.pred == null ? '-' : Number(x.pred).toFixed(2), x.z == null ? '-' : Number(x.z).toFixed(2), x.interp]);
+      doc.autoTable({
+        startY: 28, margin: { left: M, right: M },
+        head: [['Parameter', 'Measured', 'Predicted', 'Z', 'Interpretation']],
+        body: rows.length ? rows : [['(no measured values)', '', '', '', '']],
+        headStyles: { fillColor: blue }, styles: { fontSize: 9, cellPadding: 1.5 }
+      });
+      let y = doc.lastAutoTable.finalY + 6;
+      if (r.bmiInfo) {
+        doc.setFontSize(9);
+        doc.text(`BMI ${r.bmiInfo.value} — Asian: ${r.bmiInfo.asian}; WHO: ${r.bmiInfo.who}`, M, y);
+        y += 5;
+      }
+      if (r.smoke && r.smoke.summaryLines) {
+        r.smoke.summaryLines.forEach(l => { doc.text(String(l).slice(0, 100), M, y); y += 4; });
+      }
+      doc.setFontSize(8); doc.setTextColor(120);
+      doc.text('Desktop save — for clinical decision support only.', M, doc.internal.pageSize.getHeight() - 8);
+      const dataUri = doc.output('datauristring');
+      const b64 = dataUri.split(',')[1] || null;
+      return b64;
+    } catch (e) {
+      console.warn('desktop PDF build failed', e);
+      return null;
+    }
   }
 
   function exportTests() {
@@ -363,7 +416,7 @@
     syncHeightToCm, onHeightUnitChange, onHeightCmInput, onHeightFtInput,
     updateHeightBothLabel, getBmiInfo, updateBmiField,
     onSmokeChange, updateSmokeSummary, getSmokeExposure,
-    buildSnapshot, saveCurrentTest, exportTests, importTests,
+    buildSnapshot, saveCurrentTest, exportTests, importTests, buildPdfBase64ForDesktop,
     refreshCompareSelect, runComparison, downloadComparisonPDF
   });
 })(typeof globalThis !== 'undefined' ? globalThis : window);

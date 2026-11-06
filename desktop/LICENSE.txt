@@ -1,0 +1,3 @@
+FOT Calculator — offline desktop build
+For clinical decision support only.
+Copyright Dr Abhishek Singh.

@@ -1,0 +1,4 @@
+desktop/node_modules/
+desktop/dist/
+desktop/app-web/
+*.exe

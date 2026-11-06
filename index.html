@@ -255,10 +255,12 @@
 <script src="config.js"></script>
 <script src="storage.js"></script>
 <script src="drive-sync.js"></script>
+<script src="folder-sync.js"></script>
 <script src="features.js"></script>
+<script src="desktop-ui.js"></script>
 <script>
 /* ---------- PWA ---------- */
-if ("serviceWorker" in navigator) {
+if ("serviceWorker" in navigator && !(window.fotDesktop && window.fotDesktop.isDesktop)) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   });

@@ -1,0 +1,111 @@
+name: Desktop Windows installer
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'desktop-v*'
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/desktop-windows.yml'
+      - 'index.html'
+      - 'features.js'
+      - 'storage.js'
+      - 'folder-sync.js'
+      - 'desktop-ui.js'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install desktop deps
+        working-directory: desktop
+        run: npm ci
+
+      - name: Unit tests
+        working-directory: desktop
+        run: npm test
+
+      - name: Build NSIS installer
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run dist
+
+      - name: Verify PE/NSIS artifact
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem dist -Filter "FOT-Calculator-Setup-*.exe" | Select-Object -First 1
+          if (-not $exe) { throw "Installer not found" }
+          Write-Host "Artifact:" $exe.FullName $exe.Length
+          $bytes = [System.IO.File]::ReadAllBytes($exe.FullName)[0..1]
+          if (-not ($bytes[0] -eq 0x4D -and $bytes[1] -eq 0x5A)) { throw "Not a PE MZ executable" }
+          Write-Host "MZ header OK"
+
+      - name: Folder I/O smoke (no GUI)
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          $tmp = Join-Path $env:TEMP "fot-reports-smoke"
+          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+          $rec = @{
+            id = "t_smoke_1"
+            ptId = "SMOKE"
+            ptName = "Smoke Test"
+            testDate = "2026-11-07"
+            updatedAt = "2026-11-07T00:00:00.000Z"
+            measured = @{ r5 = 4.2 }
+          } | ConvertTo-Json -Depth 5
+          $jsonPath = Join-Path $tmp "SMOKE_2026-11-07_t_smoke_1.json"
+          Set-Content -Path $jsonPath -Value $rec -Encoding UTF8
+          # Minimal PDF bytes
+          [IO.File]::WriteAllBytes((Join-Path $tmp "SMOKE_2026-11-07_t_smoke_1.pdf"), [Text.Encoding]::ASCII.GetBytes("%PDF-1.1`n1 0 obj<<>>endobj`ntrailer<<>>`n%%EOF`n"))
+          $files = Get-ChildItem $tmp
+          Write-Host ($files | Out-String)
+          if (-not (Test-Path $jsonPath)) { throw "JSON missing" }
+          $parsed = Get-Content $jsonPath -Raw | ConvertFrom-Json
+          if ($parsed.id -ne "t_smoke_1") { throw "JSON content mismatch" }
+          Write-Host "Folder smoke OK"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FOT-Calculator-Setup
+          path: desktop/dist/FOT-Calculator-Setup-*.exe
+
+      - name: Read version
+        id: ver
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          $v = (Get-Content package.json | ConvertFrom-Json).version
+          echo "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: desktop-v${{ steps.ver.outputs.version }}
+          name: FOT Calculator Desktop v${{ steps.ver.outputs.version }}
+          fail_on_unmatched_files: true
+          make_latest: true
+          body: |
+            Offline Windows x64 installer (NSIS, per-user, unsigned).
+            App: FOT Calculator — Reports folder sync via Google Drive for Desktop / any folder.
+            Browser Google OAuth sync is disabled in this desktop build; the GitHub Pages web app is unchanged.
+          files: desktop/dist/FOT-Calculator-Setup-*.exe
+          generate_release_notes: false
+          preserve_order: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,71 @@
+{
+  "name": "fot-calculator",
+  "productName": "FOT Calculator",
+  "version": "1.0.0",
+  "description": "Forced Oscillation Technique reference calculator (offline desktop)",
+  "author": "Dr Abhishek Singh",
+  "license": "UNLICENSED",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --x64",
+    "dist:dir": "electron-builder --win --x64 --dir",
+    "test": "node --test ../tests/equations.test.js ../tests/clinical.test.js ../tests/merge.test.js ../tests/folder-sync.test.js ./tests/detect-drive.test.js",
+    "prepare-web": "node scripts/copy-web.js",
+    "predist": "npm run prepare-web"
+  },
+  "build": {
+    "appId": "com.abhishek126.fotcalculator",
+    "productName": "FOT Calculator",
+    "copyright": "Copyright \u00a9 Dr Abhishek Singh",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "app-web",
+        "to": "app-web"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "FOT-Calculator-Setup-${version}.${ext}",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "FOT Calculator",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "license": "LICENSE.txt"
+    },
+    "publish": null
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "png-to-ico": "^2.1.8"
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
+  }
+}
