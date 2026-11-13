@@ -1,8 +1,8 @@
-/* fot-calc-v9 — bump CACHE on every deploy so clients drop stale assets. */
-const CACHE = 'fot-calc-v9';
+/* fot-calc-v10 — bump CACHE on every deploy so clients drop stale assets. */
+const CACHE = 'fot-calc-v10';
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'icon.svg',
-  'equations.js', 'clinical.js', 'config.js', 'storage.js', 'drive-sync.js', 'folder-sync.js', 'features.js', 'desktop-ui.js',
+  'equations.js', 'clinical.js', 'gli-global-data.js', 'spirometry.js', 'config.js', 'storage.js', 'drive-sync.js', 'folder-sync.js', 'features.js', 'desktop-ui.js',
   'vendor/jspdf.umd.min.js', 'vendor/jspdf.plugin.autotable.min.js'
 ];
 self.addEventListener('install', e => {

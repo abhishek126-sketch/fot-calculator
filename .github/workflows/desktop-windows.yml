@@ -90,13 +90,16 @@ jobs:
           body: |
             Offline Windows x64 installer (NSIS, per-user under Documents\FOT Calculator\App, unsigned).
 
+            **v1.2.0**
+            - Spirometry: GLI Global 2022 (race-neutral) predicted / LLN / z-scores for FEV1, FVC, FEV1/FVC; ATS/ERS 2022 interpretation (pattern, severity, bronchodilator response > 10% of predicted) with the GOLD post-BD fixed ratio; on screen, in PDF reports, saved tests and comparisons
+
             **v1.1.0**
             - 1-year Ed25519 licence keys (name-bound)
             - Multi-user logins (scrypt passwords; reports separated per user; not encrypted at rest)
             - On-demand updates from GitHub releases with SHA-256 check; Updates\YYYY-MM-DD_vX.Y.Z\; Share update folder
             - Reports folder: Google Drive My Drive\FOT Reports if present, else Documents\FOT Calculator\Reports
 
-            Verify installer: `certutil -hashfile FOT-Calculator-Setup-1.1.0.exe SHA256` against the `.sha256` asset.
+            Verify installer: `certutil -hashfile FOT-Calculator-Setup-${{ steps.ver.outputs.version }}.exe SHA256` against the `.sha256` asset.
           files: |
             desktop/dist/FOT-Calculator-Setup-*.exe
             desktop/dist/FOT-Calculator-Setup-*.sha256

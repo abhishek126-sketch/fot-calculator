@@ -1,8 +1,8 @@
 {
   "name": "fot-calculator",
   "productName": "FOT Calculator",
-  "version": "1.1.0",
-  "description": "Forced Oscillation Technique reference calculator (offline desktop)",
+  "version": "1.2.0",
+  "description": "Forced Oscillation Technique and spirometry reference calculator (offline desktop)",
   "author": "Dr Abhishek Singh",
   "license": "UNLICENSED",
   "main": "main.js",
@@ -11,7 +11,7 @@
     "start": "electron .",
     "dist": "electron-builder --win nsis --x64",
     "dist:dir": "electron-builder --win --x64 --dir",
-    "test": "node --test ../tests/equations.test.js ../tests/clinical.test.js ../tests/merge.test.js ../tests/folder-sync.test.js ./tests/detect-drive.test.js ./tests/licence.test.js ./tests/users.test.js ./tests/paths.test.js ./tests/updates.test.js",
+    "test": "node --test ../tests/equations.test.js ../tests/spirometry.test.js ../tests/clinical.test.js ../tests/merge.test.js ../tests/folder-sync.test.js ./tests/detect-drive.test.js ./tests/licence.test.js ./tests/users.test.js ./tests/paths.test.js ./tests/updates.test.js",
     "prepare-web": "node scripts/copy-web.js",
     "predist": "npm run prepare-web"
   },

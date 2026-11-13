@@ -135,7 +135,7 @@
 
   /** Compare two saved evaluation snapshots. */
   function compare(prev, curr) {
-    const params = ['r5', 'rhi', 'x5', 'ax', 'fres'];
+    const params = ['r5', 'rhi', 'x5', 'ax', 'fres', 'fev1', 'fvc', 'fev1fvc'];
     const rows = [];
     params.forEach(p => {
       const a = prev.measured && prev.measured[p];
@@ -151,7 +151,7 @@
     return {
       prevDate: prev.testDate, currDate: curr.testDate,
       rows,
-      note: 'No validated minimal clinically important difference (MCID) for between-visit FOT change is applied here. Values and Δz are shown for clinical correlation. Within-session CoV targets (ERS 2020) are quality metrics, not visit-to-visit significance thresholds.'
+      note: 'No validated minimal clinically important difference (MCID) for between-visit FOT or spirometry change is applied here (spirometry values are pre-bronchodilator). Values and Δz are shown for clinical correlation. Within-session CoV targets (ERS 2020) are quality metrics, not visit-to-visit significance thresholds.'
     };
   }
 

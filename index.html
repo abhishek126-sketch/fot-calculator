@@ -70,7 +70,7 @@
 <body>
 <header>
   <h1>FOT Reference Calculator</h1>
-  <p>Predicted values, z-scores, and bronchodilator response for Forced Oscillation Technique. For clinical decision support only.</p>
+  <p>Predicted values, z-scores, and bronchodilator response for Forced Oscillation Technique and spirometry. For clinical decision support only.</p>
 </header>
 
 <main>
@@ -228,6 +228,26 @@
   </div>
 
   <div class="card no-print">
+    <h2>2b. Spirometry (optional)</h2>
+    <p class="muted" style="margin:-4px 0 10px;">Reference: GLI Global 2022 (race-neutral, ages 3–95). Interpretation: ATS/ERS 2022 (z-scores / LLN) with the GOLD fixed ratio. Uses the age, sex and height above.</p>
+    <div class="grid3">
+      <div><label>FEV1 (L)</label><input type="number" id="fev1" step="0.01" min="0" placeholder="e.g. 2.85" oninput="calculate()"></div>
+      <div><label>FVC (L)</label><input type="number" id="fvc" step="0.01" min="0" placeholder="e.g. 3.60" oninput="calculate()"></div>
+      <div><label>FEV1/FVC (worked out)</label><input type="text" id="fev1fvc" readonly placeholder="from FEV1 and FVC"></div>
+      <div><label>FEF25–75 (L/s, optional)</label><input type="number" id="fef2575" step="0.01" min="0" placeholder="e.g. 2.4" oninput="calculate()"></div>
+      <div><label>PEF (L/s, optional)</label><input type="number" id="pef" step="0.01" min="0" placeholder="e.g. 7.5" oninput="calculate()"></div>
+    </div>
+    <h3 style="font-size:13px;margin:16px 0 6px;color:var(--accent);">Post-Bronchodilator (optional)</h3>
+    <div class="grid3">
+      <div><label>Post-BD FEV1 (L)</label><input type="number" id="fev1post" step="0.01" min="0" placeholder="e.g. 3.10" oninput="calculate()"></div>
+      <div><label>Post-BD FVC (L)</label><input type="number" id="fvcpost" step="0.01" min="0" placeholder="e.g. 3.75" oninput="calculate()"></div>
+      <div><label>Post-BD FEV1/FVC</label><input type="text" id="fev1fvcpost" readonly placeholder="from post-BD values"></div>
+      <div><label>Post-BD FEF25–75 (L/s)</label><input type="number" id="fef2575post" step="0.01" min="0" oninput="calculate()"></div>
+      <div><label>Post-BD PEF (L/s)</label><input type="number" id="pefpost" step="0.01" min="0" oninput="calculate()"></div>
+    </div>
+  </div>
+
+  <div class="card no-print">
     <label>Remarks / Interpretation (optional)</label>
     <textarea id="remarks" placeholder="Clinical remarks / interpretation to appear on the report"></textarea>
   </div>
@@ -252,6 +272,8 @@
 <script src="vendor/jspdf.plugin.autotable.min.js"></script>
 <script src="equations.js"></script>
 <script src="clinical.js"></script>
+<script src="gli-global-data.js"></script>
+<script src="spirometry.js"></script>
 <script src="config.js"></script>
 <script src="storage.js"></script>
 <script src="drive-sync.js"></script>
@@ -324,8 +346,11 @@ function evaluate() {
   if (m.r5 !== null && m.r5post !== null && m.r5 !== 0) { const c = (m.r5post - m.r5) / m.r5 * 100; bdr.push(['R5', m.r5, m.r5post, c, 'Decrease >= 40%', c <= -40]); }
   if (m.x5 !== null && m.x5post !== null && m.x5 !== 0) { const c = (m.x5post - m.x5) / Math.abs(m.x5) * 100; bdr.push(['X5', m.x5, m.x5post, c, 'Increase >= 50%', c >= 50]); }
   if (m.ax !== null && m.axpost !== null && m.ax !== 0) { const c = (m.axpost - m.ax) / m.ax * 100; bdr.push(['AX', m.ax, m.axpost, c, 'Decrease >= 80%', c <= -80]); }
+  const spiro = FOTSPIRO.interpret({ sex, age, height,
+    pre: { fev1: num('fev1'), fvc: num('fvc'), fef2575: num('fef2575'), pef: num('pef') },
+    post: { fev1: num('fev1post'), fvc: num('fvcpost'), fef2575: num('fef2575post'), pef: num('pefpost') } });
   const ftin = FOTCLIN.cmToFeetInches(height);
-  return { age, sex, height, weight, heightFtIn: ftin, bmiInfo, smoke, ped, devId, dev, eth, warnings, approxNotes, rows, bdr, hiName,
+  return { age, sex, height, weight, heightFtIn: ftin, bmiInfo, smoke, ped, devId, dev, eth, warnings, approxNotes, rows, bdr, hiName, spiro,
     refShort: dev.short, refFull: ped ? (dev.ref || '') : (dev.ref || 'De et al., Lung India 2020;37:30-36 (Resmon Pro Full, Indian adults)'),
     deviceLabel: dev.label, approx: !!dev.approx };
 }
@@ -352,6 +377,9 @@ function calculate() {
   }
   updateBmiField();
   updateHeightBothLabel();
+  const ratioTxt = (a, b) => (a && b ? (a / b).toFixed(2) + ' (' + Math.round(a / b * 100) + '%)' : '');
+  $('fev1fvc').value = ratioTxt(num('fev1'), num('fvc'));
+  $('fev1fvcpost').value = ratioTxt(num('fev1post'), num('fvcpost'));
   const r = evaluate();
   if (!r) { $('rangeWarn').style.display = 'none';
     $('output').innerHTML = '<p class="muted">Enter age, height, and weight to calculate predicted values.</p>'; return; }
@@ -375,6 +403,7 @@ function calculate() {
     html += row(`${x.name} limits`, x.limit);
   }
   for (const b of r.bdr) html += row(`${b[0]} BDR`, `${b[3].toFixed(1)}% <span class="pill ${b[5] ? 'abnormal' : 'normal'}">${b[5] ? 'Positive' : 'Negative'}</span>`);
+  if (r.spiro) html += spiroHtml(r.spiro);
   if (r.bmiInfo) {
     html += row('BMI', `${r.bmiInfo.value} kg/m² — Asian/Indian: ${esc(r.bmiInfo.asian)} (WHO: ${esc(r.bmiInfo.who)})`);
   }
@@ -404,6 +433,53 @@ function updatePdfBtn() {
   $('pdfMsg').textContent = ok ? '' : 'Enter age, height and weight to enable the PDF report.';
 }
 
+/* ---------- Spirometry section (screen + PDF; all logic and cut-offs in spirometry.js) ---------- */
+function spiroHtml(sp) {
+  const row = (k, v) => `<div class="row"><span class="k">${esc(k)}</span><span class="v">${String(v)}</span></div>`;
+  const n2 = v => (v == null || isNaN(v)) ? '-' : Number(v).toFixed(2);
+  const th = t => `<th style="text-align:${t === 'Parameter' ? 'left' : 'right'};border-bottom:1px solid #cbd5e1;padding:4px;">${t}</th>`;
+  const td = (v, left) => `<td style="text-align:${left ? 'left' : 'right'};padding:4px;">${v}</td>`;
+  let h = `<h3 style="font-size:14px;margin:16px 0 4px;color:var(--accent);">Spirometry</h3>`;
+  h += `<p class="muted" style="margin:0 0 8px;">${esc(FOTSPIRO.CITE.gli)}. ${esc(FOTSPIRO.CITE.ats)}.</p>`;
+  if (sp.warnings.length) h += `<p class="pill caution" style="display:block;border-radius:8px;margin-bottom:8px;">${esc(sp.warnings.join(' '))}</p>`;
+  h += `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:8px;"><thead><tr>${['Parameter', 'Measured', 'Predicted', 'LLN', 'z-score', '% pred', 'Result'].map(th).join('')}</tr></thead><tbody>`;
+  for (const x of sp.rows) h += `<tr>${td(esc(x.name) + (x.unit ? ' (' + x.unit + ')' : ''), true)}${td(n2(x.meas))}${td(n2(x.pred))}${td(n2(x.lln))}${td(n2(x.z))}${td(Math.round(x.pp) + '%')}${td(`<span class="pill ${x.severity}">${esc(x.interp)}</span>`)}</tr>`;
+  h += '</tbody></table></div>';
+  for (const e of sp.extras) h += row(e.name + ' (' + e.unit + ')', (e.meas != null ? 'pre ' + n2(e.meas) : '') + (e.post != null ? (e.meas != null ? ' · ' : '') + 'post ' + n2(e.post) : '') + ' <span class="muted">(value only)</span>');
+  const cls = sp.patternKey === 'normal' ? 'normal' : sp.patternKey === 'incomplete' ? 'caution' : 'abnormal';
+  h += row('Pattern', `<span class="pill ${cls}">${esc(sp.pattern)}</span>`);
+  if (sp.severityLabel) h += row('Severity', esc(sp.severityLabel) + ' — ATS/ERS 2022');
+  for (const b of sp.bdr) h += row(`${b.name} BDR`, `${b.change >= 0 ? '+' : ''}${(b.change * 1000).toFixed(0)} mL = ${b.pctPred.toFixed(1)}% of predicted (${b.pctBase.toFixed(1)}% of baseline) <span class="pill ${b.positive ? 'abnormal' : 'normal'}">${b.positive ? 'Significant (> 10% of predicted)' : 'Not significant'}</span>`);
+  const g = sp.lines.find(l => l.startsWith('GOLD'));
+  if (g) h += row('GOLD (post-BD)', esc(g.replace(/^GOLD /, '')));
+  for (const n of sp.notes) h += `<p class="muted" style="margin:6px 0 0;font-size:12px;">${esc(n)}</p>`;
+  return h;
+}
+function spiroPdf(doc, sp, y, o) {
+  const { M, W, H, blue } = o, ensure = need => { if (y + need > H - 20) { doc.addPage(); y = 20; } };
+  const n2 = v => (v == null || isNaN(v)) ? '-' : Number(v).toFixed(2);
+  ensure(40);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...blue); doc.text('Spirometry', M, y); doc.setTextColor(0);
+  const body = sp.rows.map(x => [x.name + (x.unit ? ' (' + x.unit + ')' : ''), n2(x.meas), n2(x.pred), n2(x.lln), n2(x.z), Math.round(x.pp) + '%', x.interp]);
+  sp.extras.forEach(e => body.push([e.name + ' (' + e.unit + ')', (e.meas != null ? n2(e.meas) : '-') + (e.post != null ? ' / post ' + n2(e.post) : ''), '-', '-', '-', '-', 'Value only']));
+  doc.autoTable({ startY: y + 2, margin: { left: M, right: M }, head: [['Parameter', 'Measured', 'Predicted', 'LLN', 'Z-score', '% pred', 'Interpretation']], body,
+    headStyles: { fillColor: blue }, styles: { fontSize: 9.5, cellPadding: 2 },
+    didParseCell: d => { if (d.section === 'body' && d.column.index === 6) { const t = String(d.cell.raw);
+      if (t === 'Below LLN') { d.cell.styles.textColor = [185, 28, 28]; d.cell.styles.fontStyle = 'bold'; }
+      else if (t === 'Normal') { d.cell.styles.textColor = [4, 120, 87]; d.cell.styles.fontStyle = 'bold'; } } } });
+  y = doc.lastAutoTable.finalY + 5;
+  for (const t of [...sp.lines, ...sp.notes, ...sp.warnings]) {
+    const bold = /^(Pattern|Severity|Bronchodilator|GOLD)/.test(t);
+    doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(bold ? 9.5 : 8.5); doc.setTextColor(bold ? 0 : 90);
+    const l = doc.splitTextToSize(t, W - 2 * M); ensure(l.length * 4.4 + 2); doc.text(l, M, y); y += l.length * 4.2 + 1.5;
+  }
+  doc.setTextColor(100); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+  const c = doc.splitTextToSize('Sources: ' + FOTSPIRO.CITE.gli + '. ' + FOTSPIRO.CITE.ats + '. ' + FOTSPIRO.CITE.gold + '.', W - 2 * M);
+  ensure(c.length * 3.4 + 4); doc.text(c, M, y); y += c.length * 3.2 + 5;
+  doc.setTextColor(0);
+  return y;
+}
+
 /* ---------- PDF report (uses same equations/thresholds as calculate()) ---------- */
 function downloadPDF() {
   const age = num('age'), sex = $('sex').value, height = num('height'), weight = num('weight');
@@ -418,10 +494,10 @@ function downloadPDF() {
   const blue = [30, 58, 138];
   doc.setFillColor(...blue); doc.rect(0, 0, W, 26, 'F');
   doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(18);
-  doc.text('FOT Report', M, 12);
+  doc.text(r.spiro ? 'FOT & Spirometry Report' : 'FOT Report', M, 12);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
   doc.text($('rptHeader').value.trim() || DEFAULT_HEADER, M, 20);
-  doc.setFontSize(9); doc.text('Forced Oscillation Technique', W - M, 12, { align: 'right' });
+  doc.setFontSize(9); doc.text(r.spiro ? 'Forced Oscillation Technique + Spirometry' : 'Forced Oscillation Technique', W - M, 12, { align: 'right' });
   doc.setTextColor(0);
 
   const v = id => $(id).value.trim() || '-';
@@ -463,10 +539,10 @@ function downloadPDF() {
       else if (/Below LLN|Above ULN \(less negative\)|no Fres reference|No equation|Measured only/i.test(t)) { data.cell.styles.textColor = [71, 85, 105]; }
     }
   };
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...blue); doc.text('Results', M, y + 2); doc.setTextColor(0);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...blue); doc.text(r.spiro ? 'FOT results' : 'Results', M, y + 2); doc.setTextColor(0);
   doc.autoTable({ startY: y + 4, margin: { left: M, right: M },
     head: [['Parameter', 'Measured', 'Predicted', 'Z-score', 'LLN / ULN', 'Interpretation']],
-    body: rows.length ? rows : [['No measured values entered', '', '', '', '', '']],
+    body: rows.length ? rows : [[r.spiro ? 'No FOT values entered' : 'No measured values entered', '', '', '', '', '']],
     headStyles: { fillColor: blue }, styles: { fontSize: 9.5, cellPadding: 2 },
     columnStyles: { 4: { cellWidth: 38 }, 5: { cellWidth: 46 } }, didParseCell: colorInterp });
   y = doc.lastAutoTable.finalY + 6;
@@ -481,6 +557,7 @@ function downloadPDF() {
 
   const H = doc.internal.pageSize.getHeight();
   const ensure = need => { if (y + need > H - 20) { doc.addPage(); y = 20; } };
+  if (r.spiro) y = spiroPdf(doc, r.spiro, y, { M, W, H, blue });
   // BMI + smoking
   ensure(28);
   doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...blue); doc.text('Anthropometry & smoking', M, y); doc.setTextColor(0);
@@ -530,7 +607,7 @@ function downloadPDF() {
     doc.text('Generated: ' + gen, M, H - 8); doc.text(`Page ${i} of ${pages}`, W - M, H - 8, { align: 'right' }); }
 
   const safe = s => s.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '');
-  const fname = `FOT_Report_${safe($('ptName').value.trim()) || 'Patient'}_${$('testDate').value || now.toISOString().slice(0, 10)}.pdf`;
+  const fname = `${r.spiro ? 'FOT_Spirometry' : 'FOT'}_Report_${safe($('ptName').value.trim()) || 'Patient'}_${$('testDate').value || now.toISOString().slice(0, 10)}.pdf`;
   doc.save(fname);
 }
 

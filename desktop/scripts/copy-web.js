@@ -7,7 +7,7 @@ const dest = path.join(__dirname, '..', 'app-web');
 
 const files = [
   'index.html', 'manifest.webmanifest', 'icon.svg', 'sw.js',
-  'equations.js', 'clinical.js', 'config.js', 'storage.js', 'drive-sync.js',
+  'equations.js', 'clinical.js', 'gli-global-data.js', 'spirometry.js', 'config.js', 'storage.js', 'drive-sync.js',
   'folder-sync.js', 'features.js', 'desktop-ui.js',
   'vendor/jspdf.umd.min.js', 'vendor/jspdf.plugin.autotable.min.js'
 ];

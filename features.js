@@ -159,8 +159,12 @@
     const r = typeof evaluate === 'function' ? evaluate() : null;
     if (!r) return null;
     const measured = { r5: num('r5'), rhi: num('rhi'), x5: num('x5'), ax: num('ax'), fres: num('fres'),
-      r5post: num('r5post'), x5post: num('x5post'), axpost: num('axpost') };
+      r5post: num('r5post'), x5post: num('x5post'), axpost: num('axpost'),
+      fev1: num('fev1'), fvc: num('fvc'), fef2575: num('fef2575'), pef: num('pef'),
+      fev1post: num('fev1post'), fvcpost: num('fvcpost'), fef2575post: num('fef2575post'), pefpost: num('pefpost') };
+    if (measured.fev1 != null && measured.fvc != null) measured.fev1fvc = measured.fev1 / measured.fvc;
     const z = {};
+    if (r.spiro && r.spiro.pre) { z.fev1 = r.spiro.pre.z.fev1; z.fvc = r.spiro.pre.z.fvc; z.fev1fvc = r.spiro.pre.z.ratio; }
     r.rows.forEach(row => {
       const key = row.name.toLowerCase().replace(/[^a-z0-9]/g, '');
       if (row.name === 'R5') z.r5 = row.z;
@@ -181,7 +185,9 @@
       ped: r.ped, devId: r.devId, eth: r.eth,
       measured, z,
       rows: r.rows.map(x => ({ name: x.name, meas: x.meas, pred: x.pred, z: x.z, interp: x.interp })),
-      refShort: r.refShort, deviceLabel: r.deviceLabel
+      refShort: r.refShort, deviceLabel: r.deviceLabel,
+      spiro: r.spiro ? { pattern: r.spiro.pattern, patternKey: r.spiro.patternKey, severity: r.spiro.severity, bdrPositive: !!r.spiro.bdrPositive,
+        gold: r.spiro.gold ? { below: r.spiro.gold.below, grade: r.spiro.gold.grade } : null, lines: r.spiro.lines, ref: 'GLI Global 2022; ATS/ERS 2022' } : null
     };
   }
 
@@ -220,7 +226,7 @@
       const blue = [30, 58, 138];
       doc.setFillColor(...blue); doc.rect(0, 0, W, 22, 'F');
       doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
-      doc.text('FOT Report', M, 12);
+      doc.text(r.spiro ? 'FOT & Spirometry Report' : 'FOT Report', M, 12);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
       doc.text(($('rptHeader') && $('rptHeader').value) || 'FOT Calculator', M, 18);
       doc.setTextColor(0);
@@ -232,6 +238,7 @@
         headStyles: { fillColor: blue }, styles: { fontSize: 9, cellPadding: 1.5 }
       });
       let y = doc.lastAutoTable.finalY + 6;
+      if (r.spiro && typeof spiroPdf === 'function') y = spiroPdf(doc, r.spiro, y, { M, W, H: doc.internal.pageSize.getHeight(), blue });
       if (r.bmiInfo) {
         doc.setFontSize(9);
         doc.text(`BMI ${r.bmiInfo.value} — Asian: ${r.bmiInfo.asian}; WHO: ${r.bmiInfo.who}`, M, y);
@@ -323,7 +330,7 @@
       <th style="text-align:right;border-bottom:1px solid #cbd5e1;padding:4px;">Curr z</th>
       <th style="text-align:right;border-bottom:1px solid #cbd5e1;padding:4px;">Δz</th>
     </tr></thead><tbody>`;
-    const labels = { r5: 'R5', rhi: 'R19/R20', x5: 'X5', ax: 'AX', fres: 'Fres' };
+    const labels = { r5: 'R5', rhi: 'R19/R20', x5: 'X5', ax: 'AX', fres: 'Fres', fev1: 'FEV1 (L)', fvc: 'FVC (L)', fev1fvc: 'FEV1/FVC' };
     cmp.rows.forEach(row => {
       html += `<tr>
         <td style="padding:4px;">${labels[row.param] || row.param}</td>
@@ -375,7 +382,7 @@
       columnStyles: { 0: { fontStyle: 'bold', cellWidth: 36 }, 2: { fontStyle: 'bold', cellWidth: 36 } }
     });
     let y = doc.lastAutoTable.finalY + 6;
-    const labels = { r5: 'R5', rhi: 'R19/R20', x5: 'X5', ax: 'AX', fres: 'Fres' };
+    const labels = { r5: 'R5', rhi: 'R19/R20', x5: 'X5', ax: 'AX', fres: 'Fres', fev1: 'FEV1 (L)', fvc: 'FVC (L)', fev1fvc: 'FEV1/FVC' };
     const rows = cmp.rows.map(r => [
       labels[r.param] || r.param,
       f2(r.prev), f2(r.curr),
