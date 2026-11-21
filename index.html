@@ -142,7 +142,7 @@
       </div>
     </div>
     <div class="note" style="margin-top:12px;">
-      <strong>Units:</strong> enter resistance and reactance in cmH₂O·s/L (= hPa·s/L). If your device prints kPa·s/L, multiply by 10.2.<br>
+      <strong>Units:</strong> choose cmH₂O·s/L, hPa·s/L or kPa·s/L in section 2 to match your device printout; the app converts for the equations.<br>
       <strong>Reference sets:</strong> Adults (≥18y) use Indian adult equations (De et al. 2020: 18–81 y; R5, R19, R5–19, X5). Children (&lt;18y) use the device-specific equations chosen in the selector.<br>
       <em>*Warning: oscillometry reference equations are device-specific. Using equations from a different device may cause misdiagnosis.</em>
     </div>
@@ -213,18 +213,27 @@
 
   <div class="card no-print">
     <h2>2. Measured FOT Values</h2>
+    <div style="margin:-2px 0 12px;">
+      <label style="margin-bottom:4px;">Units — choose what your device printout shows</label>
+      <div class="chk" id="fotUnitChoice">
+        <label><input type="radio" name="fotUnit" value="cmh2o" checked onchange="onFotUnitChange()"> cmH₂O·s/L <span class="muted">(= cmH₂O/L/s)</span></label>
+        <label><input type="radio" name="fotUnit" value="hpa" onchange="onFotUnitChange()"> hPa·s/L</label>
+        <label><input type="radio" name="fotUnit" value="kpa" onchange="onFotUnitChange()"> kPa·s/L <span class="muted">(= kPa/(L/s))</span></label>
+      </div>
+      <p class="muted" id="fotUnitNote" style="margin:4px 0 0;"></p>
+    </div>
     <div class="grid3">
-      <div><label>R5 (cmH₂O/L/s)</label><input type="number" id="r5" step="0.01" placeholder="e.g. 4.5" oninput="calculate()"></div>
-      <div><label id="rHiLabel">R19 / R20 (cmH₂O/L/s)</label><input type="number" id="rhi" step="0.01" placeholder="e.g. 3.8" oninput="calculate()"></div>
-      <div><label>X5 (cmH₂O/L/s)</label><input type="number" id="x5" step="0.01" placeholder="e.g. -1.2" oninput="calculate()"></div>
-      <div><label>AX (cmH₂O/L)</label><input type="number" id="ax" step="0.01" placeholder="e.g. 6.0" oninput="calculate()"></div>
+      <div><label id="r5Label">R5 (cmH₂O·s/L)</label><input type="number" id="r5" step="0.01" placeholder="e.g. 4.5" oninput="calculate()"></div>
+      <div><label id="rHiLabel">R19 / R20 (cmH₂O·s/L)</label><input type="number" id="rhi" step="0.01" placeholder="e.g. 3.8" oninput="calculate()"></div>
+      <div><label id="x5Label">X5 (cmH₂O·s/L)</label><input type="number" id="x5" step="0.01" placeholder="e.g. -1.2" oninput="calculate()"></div>
+      <div><label id="axLabel">AX (cmH₂O/L)</label><input type="number" id="ax" step="0.01" placeholder="e.g. 6.0" oninput="calculate()"></div>
       <div><label>Fres (Hz)</label><input type="number" id="fres" step="0.1" placeholder="e.g. 12.0" oninput="calculate()"></div>
     </div>
     <h3 style="font-size:13px;margin:16px 0 6px;color:var(--accent);">Post-Bronchodilator (optional)</h3>
     <div class="grid3">
-      <div><label>Post-BD R5</label><input type="number" id="r5post" step="0.01" placeholder="e.g. 3.8" oninput="calculate()"></div>
-      <div><label>Post-BD X5</label><input type="number" id="x5post" step="0.01" placeholder="e.g. -0.9" oninput="calculate()"></div>
-      <div><label>Post-BD AX</label><input type="number" id="axpost" step="0.01" placeholder="e.g. 4.0" oninput="calculate()"></div>
+      <div><label id="r5postLabel">Post-BD R5</label><input type="number" id="r5post" step="0.01" placeholder="e.g. 3.8" oninput="calculate()"></div>
+      <div><label id="x5postLabel">Post-BD X5</label><input type="number" id="x5post" step="0.01" placeholder="e.g. -0.9" oninput="calculate()"></div>
+      <div><label id="axpostLabel">Post-BD AX</label><input type="number" id="axpost" step="0.01" placeholder="e.g. 4.0" oninput="calculate()"></div>
     </div>
   </div>
 
@@ -271,6 +280,7 @@
 
 <script src="vendor/jspdf.umd.min.js"></script>
 <script src="vendor/jspdf.plugin.autotable.min.js"></script>
+<script src="units.js"></script>
 <script src="equations.js"></script>
 <script src="clinical.js"></script>
 <script src="gli-global-data.js"></script>
@@ -322,39 +332,49 @@ function evaluate() {
   const approxNotes = (dev.approx && dev.approxNote) ? [dev.approxNote] : [];
   const hiKey = (pred.r20 ? 'r20' : (pred.r19 ? 'r19' : null));
   const hiName = dev.rLabel || (hiKey === 'r20' ? 'R20' : 'R19');
-  const m = { r5: num('r5'), rhi: num('rhi'), x5: num('x5'), ax: num('ax'), fres: num('fres'),
-              r5post: num('r5post'), x5post: num('x5post'), axpost: num('axpost') };
-  const unitWarn = FOTEQ.unitWarnings(m);
+  // Update 2.1 units: values are typed in the unit chosen (raw); equations need cmH2O (m); results are shown back
+  // in the chosen unit. Fres (Hz) is never converted.
+  const uid = fotUnit(), U = FOTUNITS.get(uid), D = FOTUNITS.dp(uid);
+  const raw = { r5: num('r5'), rhi: num('rhi'), x5: num('x5'), ax: num('ax'), fres: num('fres'),
+                r5post: num('r5post'), x5post: num('x5post'), axpost: num('axpost') };
+  const m = {};
+  for (const k in raw) m[k] = k === 'fres' ? raw[k] : FOTUNITS.toCm(raw[k], uid);
+  const unitWarn = FOTUNITS.plausibility(m, uid);
+  const show = (v, kind) => (kind === 'fres' ? v : FOTUNITS.fromCm(v, uid));
+  const fmt = (v, kind) => (v === null || v === undefined || isNaN(v)) ? '-' : show(v, kind).toFixed(kind === 'fres' ? 2 : D);
   const rows = [];
-  const add = (name, unit, meas, p, kind) => {
+  const add = (name, unit, meas, measCm, p, kind) => {
     if (meas === null) return;
+    const dp = kind === 'fres' ? 2 : D;
     if (!p) {
       const note = kind === 'fres'
         ? 'Measured only — no Fres reference equation for this device'
         : 'No equation in this reference set';
-      rows.push({ name, unit, meas, pred: null, z: null, limit: '-', interp: note, severity: 'muted' });
+      rows.push({ name, unit, meas, measCm, pred: null, z: null, limit: '-', interp: note, severity: 'muted', dp });
       return;
     }
-    const z = p.z(meas);
+    const z = p.z(measCm);
     const { interp, severity } = FOTEQ.interpretZ(kind === 'fres' ? 'r' : kind, z);
-    const limit = kind === 'x' ? `LLN ${f2(p.lln)} (ULN ${f2(p.uln)})` : `ULN ${f2(p.uln)} / LLN ${f2(p.lln)}`;
-    rows.push({ name, unit, meas, pred: p.pred, z, limit, interp, severity });
+    const limit = kind === 'x' ? `LLN ${fmt(p.lln, kind)} (ULN ${fmt(p.uln, kind)})` : `ULN ${fmt(p.uln, kind)} / LLN ${fmt(p.lln, kind)}`;
+    rows.push({ name, unit, meas, measCm, pred: show(p.pred, kind), z, limit, interp, severity, dp });
   };
-  add('R5', 'cmH2O/L/s', m.r5, pred.r5, 'r');
-  add(hiName, 'cmH2O/L/s', m.rhi, hiKey ? pred[hiKey] : null, 'r');
-  if (m.r5 !== null && m.rhi !== null) add('R5-' + (hiName.replace(/^R/, '')), 'cmH2O/L/s', +(m.r5 - m.rhi).toFixed(2), pred.r5_19 || null, 'r');
-  add('X5', 'cmH2O/L/s', m.x5, pred.x5, 'x');
-  add('AX', 'cmH2O/L', m.ax, pred.ax, 'r');
-  add('Fres', 'Hz', m.fres, pred.fres, 'fres');
+  add('R5', U.ascii, raw.r5, m.r5, pred.r5, 'r');
+  add(hiName, U.ascii, raw.rhi, m.rhi, hiKey ? pred[hiKey] : null, 'r');
+  if (raw.r5 !== null && raw.rhi !== null) add('R5-' + (hiName.replace(/^R/, '')), U.ascii, +(raw.r5 - raw.rhi).toFixed(D + 1), m.r5 - m.rhi, pred.r5_19 || null, 'r');
+  add('X5', U.ascii, raw.x5, m.x5, pred.x5, 'x');
+  add('AX', U.axAscii, raw.ax, m.ax, pred.ax, 'r');
+  add('Fres', 'Hz', raw.fres, raw.fres, pred.fres, 'fres');
+  // BDR is a % change, the same in any unit; pre/post shown as typed.
   const bdr = [];
-  if (m.r5 !== null && m.r5post !== null && m.r5 !== 0) { const c = (m.r5post - m.r5) / m.r5 * 100; bdr.push(['R5', m.r5, m.r5post, c, 'Decrease >= 40%', c <= -40]); }
-  if (m.x5 !== null && m.x5post !== null && m.x5 !== 0) { const c = (m.x5post - m.x5) / Math.abs(m.x5) * 100; bdr.push(['X5', m.x5, m.x5post, c, 'Increase >= 50%', c >= 50]); }
-  if (m.ax !== null && m.axpost !== null && m.ax !== 0) { const c = (m.axpost - m.ax) / m.ax * 100; bdr.push(['AX', m.ax, m.axpost, c, 'Decrease >= 80%', c <= -80]); }
+  if (raw.r5 !== null && raw.r5post !== null && raw.r5 !== 0) { const c = (raw.r5post - raw.r5) / raw.r5 * 100; bdr.push(['R5', raw.r5, raw.r5post, c, 'Decrease >= 40%', c <= -40]); }
+  if (raw.x5 !== null && raw.x5post !== null && raw.x5 !== 0) { const c = (raw.x5post - raw.x5) / Math.abs(raw.x5) * 100; bdr.push(['X5', raw.x5, raw.x5post, c, 'Increase >= 50%', c >= 50]); }
+  if (raw.ax !== null && raw.axpost !== null && raw.ax !== 0) { const c = (raw.axpost - raw.ax) / raw.ax * 100; bdr.push(['AX', raw.ax, raw.axpost, c, 'Decrease >= 80%', c <= -80]); }
   const spiro = FOTSPIRO.interpret({ sex, age, height,
     pre: { fev1: num('fev1'), fvc: num('fvc'), fef2575: num('fef2575'), pef: num('pef') },
     post: { fev1: num('fev1post'), fvc: num('fvcpost'), fef2575: num('fef2575post'), pef: num('pefpost') } });
   const ftin = FOTCLIN.cmToFeetInches(height);
   return { age, sex, height, weight, heightFtIn: ftin, bmiInfo, smoke, ped, devId, dev, eth, warnings, cautions, unitWarn, approxNotes, rows, bdr, hiName, spiro,
+    unitId: uid, unit: U, measuredCm: m, measuredRaw: raw,
     refShort: dev.short, refFull: ped ? (dev.ref || '') : (dev.ref || 'De et al., Lung India 2020;37:30-36 (Resmon Pro Full, Indian adults)'),
     deviceLabel: dev.label, approx: !!dev.approx };
 }
@@ -374,7 +394,7 @@ function calculate() {
     $('adultApproxWarn').style.display = adultDev.approx ? 'block' : 'none';
     $('adultApproxWarn').textContent = adultDev.approx ? adultDev.approxNote : '';
   }
-  $('rHiLabel').textContent = (ped ? (pedDev.rLabel || 'R19') : ((adultDev && adultDev.rLabel) || 'R19')) + ' (cmH\u2082O/L/s)';
+  $('rHiLabel').textContent = (ped ? (pedDev.rLabel || 'R19') : ((adultDev && adultDev.rLabel) || 'R19')) + ' (' + FOTUNITS.get(fotUnit()).name + ')';
   // Prefill free-text device when Antlia selected
   if ((ped && $('pedDevice').value === 'antlia') || (!ped && $('adultDevice').value === 'antlia')) {
     if (!$('device').value.trim()) $('device').value = 'Antlia FOT (Icaltech, India)';
@@ -395,6 +415,7 @@ function calculate() {
   ].join('<br>');
   const row = (k, v) => `<div class="row"><span class="k">${esc(k)}</span><span class="v">${String(v)}</span></div>`;
   let html = `<h3 style="margin-top:0;font-size:14px;">Reference: ${esc(r.refShort)}</h3>`;
+  if (r.unitId !== 'cmh2o') html += `<p class="muted" style="margin:-6px 0 6px;">Values in ${esc(r.unit.name)} as entered (converted to cmH₂O·s/L for the equations: ${esc(r.unit.note)}).</p>`;
   html += `<p class="muted" style="margin:-6px 0 8px;">Device: ${esc(r.deviceLabel)}${r.ped && r.dev.needsEthnicity ? ' &middot; Ethnicity: ' + ETH[r.eth] : ''}<br>${esc(r.refFull)}</p>`;
   if (r.approxNotes && r.approxNotes.length) html += `<p class="pill caution" style="display:block;border-radius:8px;margin-bottom:8px;">${esc(r.approxNotes.join(' '))}</p>`;
   if (r.unitWarn.length) html += `<p class="pill abnormal" style="display:block;border-radius:8px;margin-bottom:8px;">Check units: ${esc(r.unitWarn.join(' '))}</p>`;
@@ -404,7 +425,7 @@ function calculate() {
     html += row(`${x.name} measured`, `${x.meas} ${x.unit}`);
     if (x.pred === null) { html += row(`${x.name}`, `<span class="pill caution">${esc(x.interp)}</span>`); continue; }
     const flag = x.severity === 'abnormal' ? 'abnormal' : x.severity === 'caution' ? 'caution' : 'normal';
-    html += row(`${x.name} predicted`, `${f2(x.pred)} ${x.unit}`);
+    html += row(`${x.name} predicted`, `${x.pred.toFixed(x.dp)} ${x.unit}`);
     html += row(`${x.name} z-score`, `${f2(x.z)} <span class="pill ${flag}">${esc(x.interp)}</span>`);
     html += row(`${x.name} limits`, x.limit);
   }
@@ -423,6 +444,30 @@ function calculate() {
   updateBmiField();
   updateHeightBothLabel();
   refreshCompareSelect();
+}
+
+/* ---------- FOT units (update 2.1; conversions in units.js) ---------- */
+function fotUnit() { const c = document.querySelector('input[name=fotUnit]:checked'); return c ? c.value : FOTUNITS.DEFAULT; }
+function onFotUnitChange(skipSave) {
+  const id = fotUnit(), U = FOTUNITS.get(id), kpa = id === 'kpa';
+  if (!skipSave) { try { localStorage.setItem('fotUnit', id); } catch (e) {} }
+  $('r5Label').textContent = 'R5 (' + U.name + ')';
+  $('x5Label').textContent = 'X5 (' + U.name + ')';
+  $('axLabel').textContent = 'AX (' + U.ax + ')';
+  $('r5postLabel').textContent = 'Post-BD R5 (' + U.name + ')';
+  $('x5postLabel').textContent = 'Post-BD X5 (' + U.name + ')';
+  $('axpostLabel').textContent = 'Post-BD AX (' + U.ax + ')';
+  const ex = { r5: 4.5, rhi: 3.8, x5: -1.2, ax: 6.0, r5post: 3.8, x5post: -0.9, axpost: 4.0 };
+  for (const k in ex) { const el = $(k); el.step = kpa ? '0.001' : '0.01'; el.placeholder = 'e.g. ' + (ex[k] / U.toCm).toFixed(kpa ? 2 : 1); }
+  $('fotUnitNote').textContent = id === 'cmh2o' ? 'cmH₂O·s/L is the unit of the Indian and PulmoScan equations; no conversion.'
+    : 'Type the values exactly as printed in ' + U.name + '. ' + U.note + '. Results are shown in ' + U.name + '.';
+  calculate();
+}
+function initFotUnit() {
+  let saved = null; try { saved = localStorage.getItem('fotUnit'); } catch (e) {}
+  const el = document.querySelector('input[name=fotUnit][value="' + (FOTUNITS.UNITS[saved] ? saved : FOTUNITS.DEFAULT) + '"]');
+  if (el) el.checked = true;
+  onFotUnitChange(true);
 }
 
 /* ---------- Report fields ---------- */
@@ -509,7 +554,7 @@ function buildReportDoc() {
   const age = num('age'), sex = $('sex').value, height = num('height'), weight = num('weight');
   if (!age || !height || !weight || !window.jspdf || !window.jspdf.jsPDF) return null;
   const r = evaluate();
-  const rows = r.rows.map(x => [`${x.name} (${x.unit})`, String(x.meas), x.pred === null ? '-' : f2(x.pred), x.z === null ? '-' : f2(x.z), x.limit, x.interp]);
+  const rows = r.rows.map(x => [`${x.name} (${x.unit})`, String(x.meas), x.pred === null ? '-' : x.pred.toFixed(x.dp), x.z === null ? '-' : f2(x.z), x.limit, x.interp]);
   const bdr = r.bdr.map(b => [b[0], String(b[1]), String(b[2]), b[3].toFixed(1) + '%', b[4], b[5] ? 'Positive' : 'Negative']);
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
@@ -540,6 +585,7 @@ function buildReportDoc() {
     styles: { fontSize: 10, cellPadding: 1.4 },
     columnStyles: { 0: { fontStyle: 'bold', cellWidth: 32 }, 2: { fontStyle: 'bold', cellWidth: 36 } } });
   let y = doc.lastAutoTable.finalY + 4;
+  if (r.unitId !== 'cmh2o') { doc.setFontSize(9); doc.setFont('helvetica', 'italic'); doc.text(`FOT values in ${r.unit.ascii} as entered (converted to cmH2O.s/L for the equations; ${r.unit.note}).`, M, y); y += 5; }
   doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.text('Reference device: ', M, y);
   doc.setFont('helvetica', 'normal'); doc.text(r.deviceLabel, M + 34, y);
   y += 5; doc.setFont('helvetica', 'bold'); doc.text('Reference set: ', M, y);
@@ -651,6 +697,7 @@ function fotDriveSignOut() { if (window.FOTDRIVE) FOTDRIVE.signOut(); }
 
 /* init */
 initReportFields();
+initFotUnit();
 document.addEventListener('input', updatePdfBtn);
 document.getElementById('ptId').addEventListener('input', refreshCompareSelect);
 document.getElementById('ptName').addEventListener('input', refreshCompareSelect);

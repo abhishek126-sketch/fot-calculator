@@ -166,8 +166,11 @@
     syncHeightToCm();
     const r = typeof evaluate === 'function' ? evaluate() : null;
     if (!r) return null;
-    const measured = { r5: num('r5'), rhi: num('rhi'), x5: num('x5'), ax: num('ax'), fres: num('fres'),
-      r5post: num('r5post'), x5post: num('x5post'), axpost: num('axpost'),
+    // 2.1: FOT values are SAVED in cmH2O.s/L (whatever unit was typed) so visit-to-visit comparison stays valid;
+    // the unit that was typed and the raw values are kept alongside.
+    const mc = r.measuredCm || {};
+    const measured = { r5: mc.r5 ?? num('r5'), rhi: mc.rhi ?? num('rhi'), x5: mc.x5 ?? num('x5'), ax: mc.ax ?? num('ax'), fres: num('fres'),
+      r5post: mc.r5post ?? num('r5post'), x5post: mc.x5post ?? num('x5post'), axpost: mc.axpost ?? num('axpost'),
       fev1: num('fev1'), fvc: num('fvc'), fef2575: num('fef2575'), pef: num('pef'),
       fev1post: num('fev1post'), fvcpost: num('fvcpost'), fef2575post: num('fef2575post'), pefpost: num('pefpost') };
     if (measured.fev1 != null && measured.fvc != null) measured.fev1fvc = measured.fev1 / measured.fvc;
@@ -191,7 +194,7 @@
       smoke: r.smoke,
       device: $('device').value.trim(),
       ped: r.ped, devId: r.devId, eth: r.eth,
-      measured, z,
+      measured, z, measuredUnit: 'cmh2o', enteredUnit: r.unitId || 'cmh2o', entered: r.measuredRaw || null,
       rows: r.rows.map(x => ({ name: x.name, meas: x.meas, pred: x.pred, z: x.z, interp: x.interp })),
       refShort: r.refShort, deviceLabel: r.deviceLabel,
       spiro: r.spiro ? { pattern: r.spiro.pattern, patternKey: r.spiro.patternKey, severity: r.spiro.severity, bdrPositive: !!r.spiro.bdrPositive,
@@ -332,7 +335,9 @@
     lastCompare = { prev, curr: snap, cmp };
     $('cmpPdfBtn').disabled = false;
     const f2 = v => (v === null || v === undefined || isNaN(v)) ? '-' : Number(v).toFixed(2);
-    let html = `<h3 style="margin:0 0 8px;font-size:14px;">Comparison: ${esc(prev.testDate || '?')} → ${esc(snap.testDate || 'current')}</h3>`;
+    const uid = typeof fotUnit === 'function' ? fotUnit() : 'cmh2o', U = FOTUNITS.get(uid);
+    const cv = (p, v) => (/^(r5|rhi|x5|ax)$/.test(p) && v != null ? FOTUNITS.fromCm(v, uid).toFixed(FOTUNITS.dp(uid)) : f2(v));
+    let html = `<p class="muted" style="margin:0 0 4px;">R and X in ${U.name}, AX in ${U.ax} (saved tests are stored in cmH₂O·s/L and converted).</p><h3 style="margin:0 0 8px;font-size:14px;">Comparison: ${esc(prev.testDate || '?')} → ${esc(snap.testDate || 'current')}</h3>`;
     html += `<p class="muted">${esc(cmp.note)}</p>`;
     html += `<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr>
       <th style="text-align:left;border-bottom:1px solid #cbd5e1;padding:4px;">Param</th>
@@ -347,8 +352,8 @@
     cmp.rows.forEach(row => {
       html += `<tr>
         <td style="padding:4px;">${labels[row.param] || row.param}</td>
-        <td style="text-align:right;padding:4px;">${f2(row.prev)}</td>
-        <td style="text-align:right;padding:4px;">${f2(row.curr)}</td>
+        <td style="text-align:right;padding:4px;">${cv(row.param, row.prev)}</td>
+        <td style="text-align:right;padding:4px;">${cv(row.param, row.curr)}</td>
         <td style="text-align:right;padding:4px;">${row.pctChange == null ? '-' : f2(row.pctChange) + '%'}</td>
         <td style="text-align:right;padding:4px;">${f2(row.prevZ)}</td>
         <td style="text-align:right;padding:4px;">${f2(row.currZ)}</td>
@@ -396,9 +401,12 @@
     });
     let y = doc.lastAutoTable.finalY + 6;
     const labels = { r5: 'R5', rhi: 'R19/R20', x5: 'X5', ax: 'AX', fres: 'Fres', fev1: 'FEV1 (L)', fvc: 'FVC (L)', fev1fvc: 'FEV1/FVC' };
+    const uidP = typeof fotUnit === 'function' ? fotUnit() : 'cmh2o', UP = FOTUNITS.get(uidP);
+    const cvP = (p, v) => (/^(r5|rhi|x5|ax)$/.test(p) && v != null ? FOTUNITS.fromCm(v, uidP).toFixed(FOTUNITS.dp(uidP)) : f2(v));
+    const unitTxt = { r5: UP.ascii, rhi: UP.ascii, x5: UP.ascii, ax: UP.axAscii, fres: 'Hz' };
     const rows = cmp.rows.map(r => [
-      labels[r.param] || r.param,
-      f2(r.prev), f2(r.curr),
+      (labels[r.param] || r.param) + (unitTxt[r.param] ? ' (' + unitTxt[r.param] + ')' : ''),
+      cvP(r.param, r.prev), cvP(r.param, r.curr),
       r.pctChange == null ? '-' : f2(r.pctChange) + '%',
       f2(r.prevZ), f2(r.currZ), f2(r.deltaZ)
     ]);
