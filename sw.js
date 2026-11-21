@@ -1,12 +1,14 @@
-/* fot-calc-v12 — bump CACHE on every deploy so clients drop stale assets. */
-const CACHE = 'fot-calc-v12';
+/* fot-calc-v13 — bump CACHE on every deploy so clients drop stale assets.
+ * Network-first for every file of this app (update 2.1.1): an update shows the next time the app is opened, and the
+ * page and its scripts always come from the same version. The cache is only a fallback when offline. */
+const CACHE = 'fot-calc-v13';
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'icon.svg',
   'units.js', 'equations.js', 'clinical.js', 'gli-global-data.js', 'spirometry.js', 'config.js', 'storage.js', 'drive-sync.js', 'folder-sync.js', 'features.js', 'desktop-ui.js',
   'vendor/jspdf.umd.min.js', 'vendor/jspdf.plugin.autotable.min.js'
 ];
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS.map(a => new Request(a, { cache: 'reload' })))));
   self.skipWaiting();
 });
 self.addEventListener('activate', e => {
@@ -17,19 +19,9 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
   if (url.origin !== location.origin) return;
-  const path = url.pathname.split('/').pop() || 'index.html';
-  if (path === 'sw.js' || path === 'index.html' || path === 'config.js' || path === '' || e.request.mode === 'navigate') {
-    e.respondWith(fetch(e.request).then(res => {
-      if (res.ok) {
-        const cp = res.clone();
-        caches.open(CACHE).then(c => c.put(e.request, cp));
-      }
-      return res;
-    }).catch(() => caches.match(e.request)));
-    return;
-  }
-  e.respondWith(caches.match(e.request).then(r => r || fetch(e.request).then(res => {
+  // Always try the network first (bypassing the browser's HTTP cache); keep a copy for offline use.
+  e.respondWith(fetch(e.request, { cache: 'no-cache' }).then(res => {
     if (res.ok) { const cp = res.clone(); caches.open(CACHE).then(c => c.put(e.request, cp)); }
     return res;
-  })));
+  }).catch(() => caches.match(e.request).then(r => r || caches.match('index.html'))));
 });
