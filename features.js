@@ -73,25 +73,33 @@
     el.textContent = `${cm} cm  =  ${fi.ft} ft ${fi.inch} in (equations use cm)`;
   }
 
-  function getBmiInfo(weight, height) {
+  function getBmiInfo(weight, height, age) {
     const v = FOTCLIN.bmi(weight, height);
     if (v == null) return null;
+    const c = FOTCLIN.bmiCategories(v, age);
     return {
       value: v,
-      asian: FOTCLIN.bmiCategoryAsian(v),
-      who: FOTCLIN.bmiCategoryWHO(v),
+      asian: c.asian,
+      who: c.who,
+      child: c.child,
+      note: c.note,
       sources: FOTCLIN.BMI_SOURCES
     };
   }
 
   function updateBmiField() {
-    const w = num('weight'), h = num('height');
-    const info = getBmiInfo(w, h);
+    const w = num('weight'), h = num('height'), a = num('age');
+    const info = getBmiInfo(w, h, a);
     const out = $('bmiOut'), cite = $('bmiCite');
     if (!out) return;
     if (!info) {
       out.value = '';
       if (cite) cite.textContent = '';
+      return;
+    }
+    if (info.child) {
+      out.value = `${info.value} kg/m² — child: adult cut-offs not applicable`;
+      if (cite) cite.textContent = info.note;
       return;
     }
     out.value = `${info.value} kg/m² — Asian/Indian: ${info.asian}; WHO: ${info.who}`;
@@ -212,6 +220,11 @@
   function buildPdfBase64ForDesktop() {
     try {
       if (!window.jspdf || !window.jspdf.jsPDF) return null;
+      // Update 2.0: save the SAME full report as "Download PDF" (patient details, reference set, warnings).
+      if (typeof buildReportDoc === 'function') {
+        const full = buildReportDoc();
+        if (full) return full.doc.output('datauristring').split(',')[1] || null;
+      }
       // Generate the same report PDF into a data URI without triggering download
       const age = num('age'), height = num('height'), weight = num('weight');
       if (!age || !height || !weight) return null;
@@ -241,7 +254,7 @@
       if (r.spiro && typeof spiroPdf === 'function') y = spiroPdf(doc, r.spiro, y, { M, W, H: doc.internal.pageSize.getHeight(), blue });
       if (r.bmiInfo) {
         doc.setFontSize(9);
-        doc.text(`BMI ${r.bmiInfo.value} — Asian: ${r.bmiInfo.asian}; WHO: ${r.bmiInfo.who}`, M, y);
+        doc.text(r.bmiInfo.child ? `BMI ${r.bmiInfo.value} — ${FOTCLIN.CHILD_BMI_NOTE}` : `BMI ${r.bmiInfo.value} — Asian: ${r.bmiInfo.asian}; WHO: ${r.bmiInfo.who}`, M, y);
         y += 5;
       }
       if (r.smoke && r.smoke.summaryLines) {

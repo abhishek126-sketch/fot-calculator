@@ -31,34 +31,76 @@
     if (el) el.style.display = 'none';
   }
 
-  function showLicenceGate(status) {
+  const escH = s => String(s == null ? '' : s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+
+  /* Update 2.0 - subscription gate. Without a valid key for THIS computer the calculator stays locked
+   * (no view-only bypass). Saved reports stay reachable through "Open my saved reports". */
+  function showLicenceGate(status, opts = {}) {
+    const info = infoCache || {};
+    const code = info.machineCode || '';
+    const sup = info.supplier || {};
     const expired = status && status.expired;
+    const renewing = !!opts.renew;
+    const title = renewing ? 'Enter renewal key' : expired ? 'Subscription expired' : (status && status.reason && status.reason !== 'missing') ? 'Licence key not valid' : 'Activate FOT Calculator';
+    const why = !renewing && status && status.reason && status.reason !== 'missing' ? `<p style="color:#b91c1c;font-size:13px;margin:0 0 10px;">${escH(status.reasonText || '')}</p>` : '';
     overlay(`
-      <h2 style="margin:0 0 8px;font-size:18px;">${expired ? 'Licence expired' : 'Enter licence key'}</h2>
-      <p style="font-size:13px;color:#475569;margin:0 0 12px;">
-        ${expired
-          ? 'Your licence has expired. You can still <strong>view and export</strong> saved reports, but <strong>new tests are blocked</strong> until you enter a new key.'
-          : 'Paste the FOT1… licence key issued for this doctor. Validity is 1 year from issue date.'}
+      <h2 style="margin:0 0 8px;font-size:18px;">${title}</h2>
+      ${why}
+      <p style="font-size:13px;color:#475569;margin:0 0 10px;">
+        ${expired && !renewing ? 'Your subscription has ended, so new tests and reports are locked. Your saved reports are safe in your Reports folder.<br>' : ''}
+        To get ${renewing || expired ? 'a renewal' : 'your'} key, send <strong>your name</strong> and this <strong>Computer code</strong>
+        to ${escH(sup.name || 'the supplier')}${sup.contact ? ' (' + escH(sup.contact) + ')' : ''}:
       </p>
-      <textarea id="licKeyInput" rows="3" style="width:100%;font-family:monospace;font-size:12px;" placeholder="FOT1...."></textarea>
+      <div style="display:flex;gap:8px;align-items:center;margin:0 0 12px;">
+        <code id="licCode" style="font-size:22px;font-weight:800;letter-spacing:2px;background:#eff6ff;color:#1e3a8a;padding:8px 12px;border-radius:8px;">${escH(code)}</code>
+        <button type="button" class="secondary" id="licCopyCode">Copy</button>
+      </div>
+      <label style="font-size:13px;font-weight:600;">Licence key</label>
+      <textarea id="licKeyInput" rows="3" style="width:100%;font-family:monospace;font-size:12px;" placeholder="FOT2...."></textarea>
       <p id="licErr" style="color:#b91c1c;font-size:12px;min-height:1.2em;"></p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button type="button" class="primary" id="licActivateBtn">Activate</button>
-        ${expired ? '<button type="button" class="secondary" id="licContinueView">Continue (view only)</button>' : ''}
+        ${renewing ? '<button type="button" class="secondary" id="licCancel">Cancel</button>'
+          : '<button type="button" class="secondary" id="licOpenReports">Open my saved reports</button>'}
       </div>
+      <p style="font-size:11px;color:#64748b;margin:10px 0 0;">One key works on one computer only. FOT Calculator v${escH(info.version || '')}</p>
     `);
+    $('licCopyCode').onclick = async () => { await root.fotDesktop.copyText(code); $('licCopyCode').textContent = 'Copied'; };
     $('licActivateBtn').onclick = async () => {
-      const key = $('licKeyInput').value;
-      const r = await root.fotDesktop.activateLicence(key);
-      if (!r.ok) {
-        $('licErr').textContent = 'Invalid key: ' + (r.reason || 'unknown');
-        return;
-      }
+      const r = await root.fotDesktop.activateLicence($('licKeyInput').value);
+      if (!r.ok) { $('licErr').textContent = r.reasonText || ('Key not accepted: ' + (r.reason || 'unknown')); return; }
       hideOverlay();
+      if (renewing) { infoCache = await root.fotDesktop.getInfo(); applyLicenceToPage(); await refreshFolderLabel(); setMsg('Renewed: valid until ' + (infoCache.licence.expires || '') + '.'); return; }
       await bootAfterLicence();
     };
-    const cont = $('licContinueView');
-    if (cont) cont.onclick = async () => { hideOverlay(); await bootAfterLicence(); };
+    const openRep = $('licOpenReports');
+    if (openRep) openRep.onclick = () => root.fotDesktop.openSavedReports();
+    const cancel = $('licCancel');
+    if (cancel) cancel.onclick = () => hideOverlay();
+  }
+
+  /** True (and shows the gate) when the subscription is not active - guards PDF download. */
+  function licenceBlocksUse() {
+    const lic = (infoCache && infoCache.licence) || {};
+    if (lic.ok) return false;
+    showLicenceGate(lic);
+    return true;
+  }
+
+  /** Report header defaults to the licensed doctor; show days left near the end of the subscription. */
+  function applyLicenceToPage() {
+    const lic = (infoCache && infoCache.licence) || {};
+    if (lic.licensee && typeof root.setDefaultHeader === 'function') root.setDefaultHeader(lic.licensee);
+    let bar = $('fotLicBar');
+    if (lic.ok && lic.warn) {
+      if (!bar) {
+        bar = document.createElement('div'); bar.id = 'fotLicBar';
+        bar.style.cssText = 'background:#fff7ed;color:#9a3412;border-bottom:1px solid #fdba74;padding:8px 14px;font-size:13px;font-weight:600;';
+        document.body.insertBefore(bar, document.body.firstChild);
+      }
+      bar.innerHTML = `Subscription ends in ${lic.daysLeft} day(s) — last day ${escH(lic.expires)}. Send your Computer code <code>${escH(infoCache.machineCode)}</code> for renewal. <button type="button" class="secondary" id="fotLicRenewBar" style="padding:4px 10px;font-size:12px;">Enter renewal key</button>`;
+      $('fotLicRenewBar').onclick = () => showLicenceGate(lic, { renew: true });
+    } else if (bar) bar.remove();
   }
 
   function showAdminSetup() {
@@ -116,12 +158,8 @@
     hideBrowserDriveSync();
     infoCache = await root.fotDesktop.getInfo();
     await refreshFolderLabel();
-    if (infoCache.licence && infoCache.licence.warn) {
-      setMsg('Licence expires in ' + infoCache.licence.daysLeft + ' day(s) (' + infoCache.licence.expires + ').');
-    }
-    if (infoCache.licence && !infoCache.licence.canCreate) {
-      setMsg('Licence inactive/expired — viewing & exporting only; new saves blocked.');
-    }
+    applyLicenceToPage();
+    if (infoCache.licence && !infoCache.licence.ok) { showLicenceGate(infoCache.licence); return; }
     if (infoCache.reportsFolder || infoCache.session) {
       try { await refreshFromFolder(); } catch (e) { /* ignore */ }
     }
@@ -132,6 +170,12 @@
       showLogin();
     });
   }
+  // Subscription lapsed while the app was open (main process re-checks every 30 min).
+  if (root.fotDesktop.onLicenceLocked) root.fotDesktop.onLicenceLocked(async () => {
+    unlocked = false;
+    infoCache = await root.fotDesktop.getInfo();
+    showLicenceGate(infoCache.licence || {});
+  });
 
   function hideBrowserDriveSync() {
     const wrap = $('driveSyncWrap');
@@ -152,7 +196,7 @@
     const about = $('desktopAboutLic');
     if (about) {
       about.textContent = info.licence && info.licence.licensee
-        ? `Licensed to ${info.licence.licensee} — expires ${info.licence.expires}`
+        ? `Licensed to ${info.licence.licensee} — valid until ${info.licence.expires} · Computer code ${info.machineCode}`
         : 'No active licence';
     }
     const who = $('desktopWho');
@@ -217,7 +261,8 @@
     card.style.cssText = 'margin-top:12px;padding-top:10px;border-top:1px solid #e2e8f0;';
     card.innerHTML = `
       <p id="desktopWho" class="muted" style="margin:0 0 6px;"></p>
-      <p id="desktopAboutLic" class="muted" style="margin:0 0 8px;"></p>
+      <p id="desktopAboutLic" class="muted" style="margin:0 0 4px;"></p>
+      <button type="button" class="secondary" id="desktopRenew" style="margin:0 0 10px;padding:6px 12px;font-size:13px;">Enter renewal key</button>
       <label style="display:block;margin-bottom:6px;"><strong>Reports folder</strong> (per-user subfolder; Google Drive if available, else Documents\\FOT Calculator\\Reports)</label>
       <p class="muted" style="margin:0 0 6px;">Path: <code id="desktopFolderPath">(loading…)</code></p>
       <div id="desktopProposeWrap" style="display:none;margin-bottom:8px;">
@@ -250,6 +295,7 @@
       <button type="button" class="secondary" id="desktopLogout" style="margin-top:8px;">Sign out</button>
     `;
     saveMsg.parentNode.insertBefore(card, saveMsg);
+    $('desktopRenew')?.addEventListener('click', () => showLicenceGate((infoCache && infoCache.licence) || {}, { renew: true }));
     $('desktopAcceptProposed')?.addEventListener('click', async () => {
       await root.fotDesktop.acceptProposedFolder();
       await refreshFolderLabel();
@@ -360,28 +406,11 @@
     hideBrowserDriveSync();
     infoCache = await root.fotDesktop.getInfo();
     const lic = infoCache.licence || {};
-    if (!lic.licensee && lic.reason === 'missing') {
-      showLicenceGate(lic);
-      return;
-    }
-    if (lic.expired && !lic.licensee) {
-      showLicenceGate(lic);
-      return;
-    }
-    // Has key (valid or expired with payload)
-    if (!lic.ok && lic.reason === 'expired') {
-      // still show gate with continue view
-      showLicenceGate(lic);
-      return;
-    }
-    if (!lic.ok && lic.reason === 'missing') {
-      showLicenceGate(lic);
-      return;
-    }
+    if (!lic.ok) { showLicenceGate(lic); return; }   // 2.0: any invalid/expired/missing key = locked
     await bootAfterLicence();
   }
 
-  root.FOTDESKTOP_UI = { init, persistToFolder, refreshFromFolder, hideBrowserDriveSync };
+  root.FOTDESKTOP_UI = { init, persistToFolder, refreshFromFolder, hideBrowserDriveSync, licenceBlocksUse };
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => setTimeout(init, 0));

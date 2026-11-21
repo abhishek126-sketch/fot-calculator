@@ -1,3 +1,18 @@
-FOT Calculator — offline desktop build
-For clinical decision support only.
-Copyright Dr Abhishek Singh.
+FOT Calculator 2.0 — offline desktop software
+Copyright (c) Dr Abhishek Singh. All rights reserved.
+
+SUBSCRIPTION LICENCE
+1. This software is licensed, not sold. It works only with a valid licence key issued by
+   Dr Abhishek Singh for the named doctor and for ONE computer (identified by its Computer code).
+2. A key is valid for the subscription period written in it (for example 1 month). When it ends,
+   the calculator locks until a renewal key is entered. Reports already saved stay in your
+   Reports folder and remain yours.
+3. You may not copy, share, resell, modify or reverse-engineer the software or its keys, or use
+   one key on more than one computer.
+4. Clinical use: the software gives reference values and z-scores from published equations for
+   decision support only. Results must be interpreted by a qualified clinician together with the
+   clinical picture and test quality. Reference equations are device-specific.
+5. The software is provided "as is", without warranty of any kind. The author is not liable for
+   any clinical decision or loss arising from its use.
+
+By installing, you agree to these terms.

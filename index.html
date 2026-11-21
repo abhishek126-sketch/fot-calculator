@@ -142,7 +142,8 @@
       </div>
     </div>
     <div class="note" style="margin-top:12px;">
-      <strong>Reference sets:</strong> Adults (≥18y) use Indian adult equations. Children (&lt;18y) use the device-specific equations chosen in the selector.<br>
+      <strong>Units:</strong> enter resistance and reactance in cmH₂O·s/L (= hPa·s/L). If your device prints kPa·s/L, multiply by 10.2.<br>
+      <strong>Reference sets:</strong> Adults (≥18y) use Indian adult equations (De et al. 2020: 18–81 y; R5, R19, R5–19, X5). Children (&lt;18y) use the device-specific equations chosen in the selector.<br>
       <em>*Warning: oscillometry reference equations are device-specific. Using equations from a different device may cause misdiagnosis.</em>
     </div>
   </div>
@@ -302,7 +303,7 @@ function evaluate() {
   syncHeightToCm();
   const age = num('age'), sex = $('sex').value, height = num('height'), weight = num('weight');
   if (!age || !height || !weight) return null;
-  const bmiInfo = getBmiInfo(weight, height);
+  const bmiInfo = getBmiInfo(weight, height, age);
   const smoke = getSmokeExposure();
   const ped = age < 18;
   const eth = $('ethnicity').value;
@@ -315,12 +316,15 @@ function evaluate() {
     dev = FOTEQ.ADULT_DEVICES[devId] || FOTEQ.ADULT;
   }
   const pred = dev.predict(sex, age, height, weight, eth);
-  const warnings = ped ? FOTEQ.rangeWarnings(dev, age, height) : [];
+  // Update 2.0: study-range warnings for adults too (De Lung India 2020: 18-81 y) + caution over 60 y.
+  const warnings = FOTEQ.rangeWarnings(dev, age, height);
+  const cautions = FOTEQ.rangeCautions(dev, age);
   const approxNotes = (dev.approx && dev.approxNote) ? [dev.approxNote] : [];
   const hiKey = (pred.r20 ? 'r20' : (pred.r19 ? 'r19' : null));
-  const hiName = ped ? (dev.rLabel || (hiKey === 'r20' ? 'R20' : 'R19')) : (hiKey === 'r20' ? 'R20' : 'R19/R20');
+  const hiName = dev.rLabel || (hiKey === 'r20' ? 'R20' : 'R19');
   const m = { r5: num('r5'), rhi: num('rhi'), x5: num('x5'), ax: num('ax'), fres: num('fres'),
               r5post: num('r5post'), x5post: num('x5post'), axpost: num('axpost') };
+  const unitWarn = FOTEQ.unitWarnings(m);
   const rows = [];
   const add = (name, unit, meas, p, kind) => {
     if (meas === null) return;
@@ -350,7 +354,7 @@ function evaluate() {
     pre: { fev1: num('fev1'), fvc: num('fvc'), fef2575: num('fef2575'), pef: num('pef') },
     post: { fev1: num('fev1post'), fvc: num('fvcpost'), fef2575: num('fef2575post'), pef: num('pefpost') } });
   const ftin = FOTCLIN.cmToFeetInches(height);
-  return { age, sex, height, weight, heightFtIn: ftin, bmiInfo, smoke, ped, devId, dev, eth, warnings, approxNotes, rows, bdr, hiName, spiro,
+  return { age, sex, height, weight, heightFtIn: ftin, bmiInfo, smoke, ped, devId, dev, eth, warnings, cautions, unitWarn, approxNotes, rows, bdr, hiName, spiro,
     refShort: dev.short, refFull: ped ? (dev.ref || '') : (dev.ref || 'De et al., Lung India 2020;37:30-36 (Resmon Pro Full, Indian adults)'),
     deviceLabel: dev.label, approx: !!dev.approx };
 }
@@ -370,7 +374,7 @@ function calculate() {
     $('adultApproxWarn').style.display = adultDev.approx ? 'block' : 'none';
     $('adultApproxWarn').textContent = adultDev.approx ? adultDev.approxNote : '';
   }
-  $('rHiLabel').textContent = (ped ? (pedDev.rLabel || 'R19') : 'R19 / R20') + ' (cmH\u2082O/L/s)';
+  $('rHiLabel').textContent = (ped ? (pedDev.rLabel || 'R19') : ((adultDev && adultDev.rLabel) || 'R19')) + ' (cmH\u2082O/L/s)';
   // Prefill free-text device when Antlia selected
   if ((ped && $('pedDevice').value === 'antlia') || (!ped && $('adultDevice').value === 'antlia')) {
     if (!$('device').value.trim()) $('device').value = 'Antlia FOT (Icaltech, India)';
@@ -393,7 +397,9 @@ function calculate() {
   let html = `<h3 style="margin-top:0;font-size:14px;">Reference: ${esc(r.refShort)}</h3>`;
   html += `<p class="muted" style="margin:-6px 0 8px;">Device: ${esc(r.deviceLabel)}${r.ped && r.dev.needsEthnicity ? ' &middot; Ethnicity: ' + ETH[r.eth] : ''}<br>${esc(r.refFull)}</p>`;
   if (r.approxNotes && r.approxNotes.length) html += `<p class="pill caution" style="display:block;border-radius:8px;margin-bottom:8px;">${esc(r.approxNotes.join(' '))}</p>`;
+  if (r.unitWarn.length) html += `<p class="pill abnormal" style="display:block;border-radius:8px;margin-bottom:8px;">Check units: ${esc(r.unitWarn.join(' '))}</p>`;
   if (r.warnings.length) html += `<p class="pill abnormal" style="display:block;border-radius:8px;margin-bottom:8px;">Out of study range: ${esc(r.warnings.join(' '))}</p>`;
+  if (r.cautions.length) html += `<p class="pill caution" style="display:block;border-radius:8px;margin-bottom:8px;">Caution: ${esc(r.cautions.join(' '))}</p>`;
   for (const x of r.rows) {
     html += row(`${x.name} measured`, `${x.meas} ${x.unit}`);
     if (x.pred === null) { html += row(`${x.name}`, `<span class="pill caution">${esc(x.interp)}</span>`); continue; }
@@ -405,7 +411,8 @@ function calculate() {
   for (const b of r.bdr) html += row(`${b[0]} BDR`, `${b[3].toFixed(1)}% <span class="pill ${b[5] ? 'abnormal' : 'normal'}">${b[5] ? 'Positive' : 'Negative'}</span>`);
   if (r.spiro) html += spiroHtml(r.spiro);
   if (r.bmiInfo) {
-    html += row('BMI', `${r.bmiInfo.value} kg/m² — Asian/Indian: ${esc(r.bmiInfo.asian)} (WHO: ${esc(r.bmiInfo.who)})`);
+    html += row('BMI', r.bmiInfo.child ? `${r.bmiInfo.value} kg/m² — ${esc(r.bmiInfo.note)}`
+      : `${r.bmiInfo.value} kg/m² — Asian/Indian: ${esc(r.bmiInfo.asian)} (WHO: ${esc(r.bmiInfo.who)})`);
   }
   html += row('Height', `${f2(r.height)} cm (${r.heightFtIn.ft} ft ${r.heightFtIn.inch} in)`);
   if (r.smoke && r.smoke.summaryLines) {
@@ -419,8 +426,15 @@ function calculate() {
 }
 
 /* ---------- Report fields ---------- */
-const DEFAULT_HEADER = 'Dr Abhishek Singh, Pulmonologist';
+let DEFAULT_HEADER = 'Dr Abhishek Singh, Pulmonologist';
 function saveHeader() { try { localStorage.setItem('fotReportHeader', $('rptHeader').value); } catch (e) {} }
+/* Desktop (update 2.0): reports of a licensed doctor default to THEIR name, not the publisher's. */
+function setDefaultHeader(h) {
+  if (!h) return;
+  const old = DEFAULT_HEADER; DEFAULT_HEADER = h;
+  let saved = null; try { saved = localStorage.getItem('fotReportHeader'); } catch (e) {}
+  if (saved === null || saved === old || !$('rptHeader').value.trim() || $('rptHeader').value === old) $('rptHeader').value = h;
+}
 function initReportFields() {
   let h = null; try { h = localStorage.getItem('fotReportHeader'); } catch (e) {}
   $('rptHeader').value = h !== null ? h : DEFAULT_HEADER;
@@ -482,9 +496,18 @@ function spiroPdf(doc, sp, y, o) {
 
 /* ---------- PDF report (uses same equations/thresholds as calculate()) ---------- */
 function downloadPDF() {
-  const age = num('age'), sex = $('sex').value, height = num('height'), weight = num('weight');
+  const age = num('age'), height = num('height'), weight = num('weight');
   if (!age || !height || !weight) { updatePdfBtn(); alert('Please enter age, height and weight first.'); return; }
   if (!window.jspdf || !window.jspdf.jsPDF) { alert('PDF library not loaded. Please reload the page.'); return; }
+  if (window.FOTDESKTOP_UI && FOTDESKTOP_UI.licenceBlocksUse && FOTDESKTOP_UI.licenceBlocksUse()) return;
+  const built = buildReportDoc();
+  if (built) built.doc.save(built.fname);
+}
+
+/* Builds the full report (used by Download PDF and by the desktop Reports-folder save). Returns { doc, fname }. */
+function buildReportDoc() {
+  const age = num('age'), sex = $('sex').value, height = num('height'), weight = num('weight');
+  if (!age || !height || !weight || !window.jspdf || !window.jspdf.jsPDF) return null;
   const r = evaluate();
   const rows = r.rows.map(x => [`${x.name} (${x.unit})`, String(x.meas), x.pred === null ? '-' : f2(x.pred), x.z === null ? '-' : f2(x.z), x.limit, x.interp]);
   const bdr = r.bdr.map(b => [b[0], String(b[1]), String(b[2]), b[3].toFixed(1) + '%', b[4], b[5] ? 'Positive' : 'Negative']);
@@ -503,7 +526,8 @@ function downloadPDF() {
   const v = id => $(id).value.trim() || '-';
   const td = $('testDate').value ? $('testDate').value.split('-').reverse().join('-') : '-';
   const ft = r.heightFtIn;
-  const bmiStr = r.bmiInfo ? (r.bmiInfo.value + ' (' + r.bmiInfo.asian + ' Asian; WHO ' + r.bmiInfo.who + ')') : '-';
+  const bmiStr = !r.bmiInfo ? '-' : r.bmiInfo.child ? (r.bmiInfo.value + ' (child: use BMI-for-age chart)')
+    : (r.bmiInfo.value + ' (' + r.bmiInfo.asian + ' Asian; WHO ' + r.bmiInfo.who + ')');
   const details = [
     ['Patient name', v('ptName'), 'Patient ID / UHID', v('ptId')],
     ['Age', age + ' years', 'Sex', sex === 'male' ? 'Male' : 'Female'],
@@ -526,7 +550,15 @@ function downloadPDF() {
     y += 1; const al = doc.splitTextToSize('APPROXIMATE (not device-derived): ' + r.approxNotes.join(' '), W - 2 * M);
     doc.text(al, M, y); y += al.length * 3.8 + 1;
   }
-  if (r.warnings.length) { y += 1; doc.text('OUT OF STUDY RANGE: ' + r.warnings.join(' ') + ' Predicted values are extrapolated.', M, y, { maxWidth: W - 2 * M }); y += 5; }
+  const pdfNote = (label, list, color) => {
+    if (!list.length) return;
+    doc.setTextColor(...color); y += 1;
+    const l = doc.splitTextToSize(label + list.join(' '), W - 2 * M); doc.text(l, M, y); y += l.length * 3.8 + 1;
+  };
+  pdfNote('CHECK UNITS: ', r.unitWarn, [185, 28, 28]);
+  pdfNote('OUT OF STUDY RANGE: ', r.warnings.length ? [...r.warnings, 'Predicted values are extrapolated.'] : [], [180, 83, 9]);
+  pdfNote('CAUTION: ', r.cautions, [180, 83, 9]);
+  doc.setTextColor(180, 83, 9);
   if (r.ped) { doc.text('Reference equations are device-specific; they apply only to tests done on the device named above.', M, y + 1); y += 2; }
   doc.setTextColor(0);
   y += 5;
@@ -565,8 +597,10 @@ function downloadPDF() {
   const bmiCite = (r.bmiInfo && FOTCLIN.BMI_SOURCES.asian) || '';
   const smokeLines = (r.smoke && r.smoke.summaryLines) ? r.smoke.summaryLines : ['Never smoker'];
   const anthBody = [
-    ['BMI (Asian/Indian cut-offs)', r.bmiInfo ? (r.bmiInfo.value + ' kg/m2 — ' + r.bmiInfo.asian) : '-'],
-    ['BMI (WHO, optional)', r.bmiInfo ? r.bmiInfo.who : '-'],
+    ...(r.bmiInfo && r.bmiInfo.child
+      ? [['BMI (child)', r.bmiInfo.value + ' kg/m2 — ' + r.bmiInfo.note]]
+      : [['BMI (Asian/Indian cut-offs)', r.bmiInfo ? (r.bmiInfo.value + ' kg/m2 — ' + r.bmiInfo.asian) : '-'],
+         ['BMI (WHO, optional)', r.bmiInfo ? r.bmiInfo.who : '-']]),
     ...smokeLines.map(l => ['Smoking', l])
   ];
   doc.autoTable({ startY: y, margin: { left: M, right: M }, body: anthBody, theme: 'plain',
@@ -608,7 +642,7 @@ function downloadPDF() {
 
   const safe = s => s.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '');
   const fname = `${r.spiro ? 'FOT_Spirometry' : 'FOT'}_Report_${safe($('ptName').value.trim()) || 'Patient'}_${$('testDate').value || now.toISOString().slice(0, 10)}.pdf`;
-  doc.save(fname);
+  return { doc, fname };
 }
 
 function fotDriveSignIn() { if (window.FOTDRIVE) FOTDRIVE.signIn(); }

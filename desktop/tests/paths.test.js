@@ -9,7 +9,7 @@ test('ensureTree creates Documents/FOT Calculator structure', () => {
   const dirs = P.ensureTree(tmp);
   assert.ok(fs.existsSync(dirs.licences));
   assert.ok(fs.existsSync(dirs.updates));
-  assert.ok(fs.existsSync(dirs.keyGenerator));
+  assert.equal(dirs.keyGenerator, undefined); // 2.0: no Key Generator folder on customers' PCs
   assert.ok(fs.existsSync(dirs.reports));
   assert.equal(dirs.root, path.join(tmp, 'FOT Calculator'));
 });

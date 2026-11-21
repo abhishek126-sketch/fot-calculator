@@ -3,7 +3,8 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
+const os = require('os');
 
 const licence = require('./lib/licence');
 const users = require('./lib/users');
@@ -14,6 +15,12 @@ const SETTINGS_NAME = 'fot-desktop-settings.json';
 const USERS_NAME = 'users.json';
 const LICENCE_STORE = 'licence.json';
 const SESSION_IDLE_MS = 15 * 60 * 1000;
+
+// Test hook: run against throw-away folders (used by the build checks; customers never set these).
+if (process.env.FOT_TEST_USERDATA) app.setPath('userData', process.env.FOT_TEST_USERDATA);
+if (process.env.FOT_TEST_DOCUMENTS) app.setPath('documents', process.env.FOT_TEST_DOCUMENTS);
+if (process.env.FOT_TEST_DESKTOP) app.setPath('desktop', process.env.FOT_TEST_DESKTOP);
+const startMenuDir = () => process.env.FOT_TEST_STARTMENU || path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs');
 
 let mainWindow = null;
 let sessionUser = null;
@@ -34,8 +41,30 @@ function fotDirs() {
 function settingsPath() { return userDataPath(SETTINGS_NAME); }
 function usersPath() { return userDataPath(USERS_NAME); }
 function licencePath() { return userDataPath(LICENCE_STORE); }
-function publicKeyPath() {
-  return path.join(__dirname, 'lib', 'fot-licence-public.pem');
+function publicKeyPath(name = 'fot-licence-public.pem') {
+  return path.join(__dirname, 'lib', name);
+}
+
+/* ---------- this computer's code (FOT2 keys are bound to it) ---------- */
+let machineCache = null;
+function rawMachineId() {
+  try {
+    // Windows MachineGuid: set when Windows is installed; same for every user of this PC.
+    const out = execFileSync('reg', ['query', 'HKLM\\SOFTWARE\\Microsoft\\Cryptography', '/v', 'MachineGuid', '/reg:64'],
+      { encoding: 'utf8', windowsHide: true, timeout: 5000 });
+    const m = out.match(/MachineGuid\s+REG_SZ\s+([0-9a-fA-F-]{20,})/);
+    if (m) return 'guid:' + m[1];
+  } catch { /* fall back below */ }
+  return 'host:' + os.hostname() + '|' + (os.userInfo().username || '');
+}
+function thisMachineCode() {
+  if (!machineCache) machineCache = licence.machineCode(rawMachineId());
+  return machineCache;
+}
+
+function supplierInfo() {
+  try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'lib', 'supplier.json'), 'utf8')); }
+  catch { return { name: 'Dr Abhishek Singh', contact: '' }; }
 }
 
 function loadSettings() {
@@ -55,8 +84,14 @@ function saveLicenceStore(s) {
   fs.writeFileSync(licencePath(), JSON.stringify(s, null, 2), { mode: 0o600 });
 }
 
-function getPublicKey() {
-  return licence.loadPublicKey(publicKeyPath());
+let keysCache = null;
+function getPublicKeys() {
+  if (!keysCache) {
+    keysCache = { v1: null, v2: null };
+    try { keysCache.v1 = licence.loadPublicKey(publicKeyPath('fot-licence-public.pem')); } catch { /* legacy key optional */ }
+    keysCache.v2 = licence.loadPublicKey(publicKeyPath('fot-licence-public-v2.pem'));
+  }
+  return keysCache;
 }
 
 function clockDate() {
@@ -73,15 +108,24 @@ function clockDate() {
 function currentLicenceStatus() {
   const store = loadLicenceStore();
   if (!store.key) return { ok: false, reason: 'missing', canViewOld: true, canCreate: false };
-  const v = licence.verifyLicence(getPublicKey(), store.key, clockDate());
+  const v = licence.verifyLicence(getPublicKeys(), store.key, clockDate(), thisMachineCode());
   return {
     ...v,
     canCreate: !!v.ok,
     canViewOld: true,
     licensee: v.payload && v.payload.name,
-    expires: v.payload && v.payload.expires,
-    issued: v.payload && v.payload.issued
+    expires: v.payload && licence.lastValidDay(v.payload),
+    issued: v.payload && v.payload.issued,
+    months: v.payload && v.payload.months
   };
+}
+
+/* Re-check the licence while the app stays open (e.g. it expires at midnight): lock the window if it lapses. */
+let lastLicenceOk = null;
+function watchLicence() {
+  const ok = !!currentLicenceStatus().ok;
+  if (lastLicenceOk === true && !ok && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('desktop:licenceLocked');
+  lastLicenceOk = ok;
 }
 
 function detectGoogleDriveCandidates() {
@@ -207,8 +251,28 @@ function createWindow() {
   mainWindow.webContents.on('before-input-event', () => resetIdle());
 }
 
+/* ZIP edition (2.0): no installer is needed, so the app makes its own Desktop + Start-menu icons on first run
+ * (and again if the folder was moved). Skipped when running from a temp/zip-preview folder. */
+function ensureShortcuts() {
+  if (!app.isPackaged || process.platform !== 'win32' || process.env.FOT_NO_SHORTCUTS === '1') return;
+  // Portable single-exe edition runs from a temp copy; PORTABLE_EXECUTABLE_FILE is the real .exe the doctor opened.
+  const exe = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+  if (/\\(Temp|INetCache)\\/i.test(exe)) return;
+  const s = loadSettings();
+  if (s.shortcutsFor === exe) return;
+  // The program file is Electron's original (unmodified, so Windows Smart App Control trusts it); our icon is a file.
+  const ico = path.join(__dirname, 'build', 'icon.ico');
+  const opts = { target: exe, cwd: path.dirname(exe), icon: fs.existsSync(ico) ? ico : exe, iconIndex: 0, description: 'FOT Calculator' };
+  const made = [];
+  for (const dir of [app.getPath('desktop'), startMenuDir()]) {
+    try { ensureDir(dir); if (shell.writeShortcutLink(path.join(dir, 'FOT Calculator.lnk'), 'create', opts)) made.push(dir); } catch { /* ignore */ }
+  }
+  if (made.length) { s.shortcutsFor = exe; saveSettings(s); }
+}
+
 app.whenReady().then(() => {
   fotDirs();
+  try { ensureShortcuts(); } catch { /* never block start-up */ }
   const s = loadSettings();
   if (!s.reportsFolder) {
     s.reportsFolderProposed = defaultReportsProposal();
@@ -216,6 +280,8 @@ app.whenReady().then(() => {
   }
   clockDate();
   createWindow();
+  watchLicence();
+  setInterval(watchLicence, 30 * 60 * 1000);
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -244,14 +310,19 @@ ipcMain.handle('desktop:getInfo', () => {
       ok: !!lic.ok,
       expired: !!lic.expired,
       reason: lic.reason,
+      reasonText: lic.ok ? '' : licence.reasonText(lic.reason),
       licensee: lic.licensee || null,
       expires: lic.expires || null,
       issued: lic.issued || null,
+      months: lic.months || null,
+      version: lic.version || null,
       daysLeft: lic.daysLeft,
       warn: !!lic.warn,
       canCreate: !!lic.canCreate,
       canViewOld: true
     },
+    machineCode: thisMachineCode(),
+    supplier: supplierInfo(),
     session: sessionUser,
     needsAdminSetup: !(db.users && db.users.length),
     users: (db.users || []).map(u => ({ username: u.username, displayName: u.displayName, role: u.role }))
@@ -259,11 +330,9 @@ ipcMain.handle('desktop:getInfo', () => {
 });
 
 ipcMain.handle('desktop:activateLicence', (_e, keyText) => {
-  const v = licence.verifyLicence(getPublicKey(), keyText, clockDate());
-  if (!v.ok && v.reason !== 'expired') {
-    return { ok: false, reason: v.reason };
-  }
-  // Allow activating even if already expired so user can view old; but canCreate false
+  const v = licence.verifyLicence(getPublicKeys(), keyText, clockDate(), thisMachineCode());
+  // Update 2.0 (subscription): only a currently valid key is accepted.
+  if (!v.ok) return { ok: false, reason: v.reason, reasonText: licence.reasonText(v.reason) };
   const store = loadLicenceStore();
   store.key = String(keyText).trim().replace(/\s+/g, '');
   store.activatedAt = new Date().toISOString();
@@ -273,7 +342,21 @@ ipcMain.handle('desktop:activateLicence', (_e, keyText) => {
     const dest = path.join(fotDirs().licences, 'active-licence.txt');
     fs.writeFileSync(dest, store.key + '\n', { mode: 0o600 });
   } catch { /* ignore */ }
+  lastLicenceOk = true;
   return { ok: true, status: currentLicenceStatus() };
+});
+
+/* Locked screen: the doctor can still open the folder with the reports already saved (their own patient files). */
+ipcMain.handle('desktop:openSavedReports', async () => {
+  const s = loadSettings();
+  const folder = s.reportsFolder || fotDirs().reports;
+  ensureDir(folder);
+  await shell.openPath(folder);
+  return { ok: true, folder };
+});
+ipcMain.handle('desktop:copyText', (_e, text) => {
+  require('electron').clipboard.writeText(String(text || ''));
+  return { ok: true };
 });
 
 ipcMain.handle('desktop:setupAdmin', (_e, { username, password, displayName }) => {

@@ -25,5 +25,8 @@ contextBridge.exposeInMainWorld('fotDesktop', {
   installFromFile: () => ipcRenderer.invoke('desktop:installFromFile'),
   shareUpdate: () => ipcRenderer.invoke('desktop:shareUpdate'),
   openFotRoot: () => ipcRenderer.invoke('desktop:openFotRoot'),
-  onSessionLocked: (cb) => ipcRenderer.on('desktop:sessionLocked', () => cb())
+  openSavedReports: () => ipcRenderer.invoke('desktop:openSavedReports'),
+  copyText: (t) => ipcRenderer.invoke('desktop:copyText', t),
+  onSessionLocked: (cb) => ipcRenderer.on('desktop:sessionLocked', () => cb()),
+  onLicenceLocked: (cb) => ipcRenderer.on('desktop:licenceLocked', () => cb())
 });

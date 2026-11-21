@@ -13,7 +13,6 @@ function ensureTree(documentsPath) {
     app: path.join(root, 'App'),
     updates: path.join(root, 'Updates'),
     licences: path.join(root, 'Licences'),
-    keyGenerator: path.join(root, 'Key Generator'),
     backups: path.join(root, 'Backups'),
     reports: path.join(root, 'Reports')
   };

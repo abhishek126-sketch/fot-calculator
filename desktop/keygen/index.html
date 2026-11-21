@@ -2,51 +2,78 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>FOT Key Generator</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'">
+  <title>FOT Key Generator (private)</title>
   <style>
-    body { font-family: system-ui, sans-serif; margin: 24px; color: #0f172a; }
-    label { display: block; font-weight: 600; margin-top: 12px; }
-    input, textarea { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; }
-    button { margin-top: 12px; margin-right: 8px; padding: 8px 14px; cursor: pointer; }
-    .out { margin-top: 16px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 12px; border-radius: 8px; }
-    code { word-break: break-all; font-size: 12px; }
-    .muted { color: #64748b; font-size: 13px; }
+    body { font-family: system-ui, Segoe UI, sans-serif; margin: 22px; color: #0f172a; background: #f8fafc; }
+    h1 { font-size: 20px; margin: 0 0 4px; color: #1e3a8a; }
+    .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-top: 12px; }
+    label { display: block; font-weight: 600; margin-top: 12px; font-size: 14px; }
+    input, select { width: 100%; padding: 9px; margin-top: 4px; box-sizing: border-box; font-size: 15px; border: 1px solid #cbd5e1; border-radius: 8px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    button { margin-top: 14px; margin-right: 8px; padding: 10px 16px; cursor: pointer; border: 0; border-radius: 8px; font-weight: 700; font-size: 14px; }
+    .primary { background: #1e3a8a; color: #fff; } .secondary { background: #e2e8f0; color: #1e3a8a; }
+    code { word-break: break-all; font-size: 12px; display: block; background: #f1f5f9; padding: 10px; border-radius: 8px; }
+    .muted { color: #64748b; font-size: 13px; } .err { color: #b91c1c; font-weight: 600; } .ok { color: #047857; font-weight: 700; }
   </style>
 </head>
 <body>
-  <h1>FOT Key Generator</h1>
-  <p class="muted">Private tool — issues 1-year Ed25519 licence keys. Keys are saved under Documents\FOT Calculator\Licences\.</p>
-  <label>Doctor name</label>
-  <input id="name" placeholder="Dr …">
-  <label>Notes (optional)</label>
-  <input id="notes" placeholder="Clinic / invoice #">
-  <button id="go">Generate 1-year key</button>
-  <button id="open">Open Licences folder</button>
-  <div class="out" id="out" style="display:none;">
-    <div><strong>Expires:</strong> <span id="exp"></span></div>
-    <div style="margin-top:8px;"><code id="key"></code></div>
-    <button id="copy">Copy key</button>
+  <h1>FOT Key Generator <span class="muted">(private — do not give to anyone)</span></h1>
+  <p class="muted" id="keyState">Checking private key…</p>
+  <div class="card">
+    <label>Doctor name (as it should appear on their reports)</label>
+    <input id="name" placeholder="Dr …">
+    <label>Computer code (the doctor sees it on the Activate screen)</label>
+    <input id="machine" placeholder="ABCDE-23456" style="text-transform:uppercase;letter-spacing:2px;font-weight:700;">
+    <div class="row">
+      <div><label>Subscription</label><select id="months"></select></div>
+      <div><label>Start date</label><input id="start" type="date"></div>
+    </div>
+    <p class="muted" id="validTxt"></p>
+    <div class="row">
+      <div><label>Amount received, Rs (your record only)</label><input id="amount" type="number" min="0" step="1" placeholder="optional"></div>
+      <div><label>Notes (your record only)</label><input id="notes" placeholder="UPI ref / clinic / phone"></div>
+    </div>
+    <p class="muted">Renewing before the old key ends? Set the start date to the doctor's old last day + 1, so no days are lost.</p>
+    <button class="primary" id="go">Make key</button>
+    <button class="secondary" id="open">Open Licences folder</button>
+    <p id="err" class="err"></p>
+  </div>
+  <div class="card" id="out" style="display:none;">
+    <p class="ok" id="summary"></p>
+    <code id="key"></code>
+    <button class="primary" id="copy">Copy key</button>
     <p class="muted" id="file"></p>
   </div>
   <script>
-    document.getElementById('go').onclick = async () => {
+    const $ = id => document.getElementById(id);
+    async function preview() {
+      const p = await window.keygen.preview({ months: $('months').value, start: $('start').value });
+      $('validTxt').textContent = `Valid ${p.start} to ${p.lastDay} (inclusive). The calculator locks on the next day.`;
+    }
+    (async () => {
+      const s = await window.keygen.status();
+      $('keyState').innerHTML = s.keyFound ? 'Private key found: <code style="display:inline;padding:2px 6px;">' + s.keyPath + '</code>'
+        : '<span class="err">Private key NOT found — keys cannot be made on this computer.</span>';
+      $('go').disabled = !s.keyFound;
+      $('months').innerHTML = s.months.map(m => `<option value="${m}">${m} month${m > 1 ? 's' : ''}</option>`).join('');
+      $('start').value = s.today;
+      preview();
+    })();
+    $('months').onchange = preview; $('start').onchange = preview;
+    $('go').onclick = async () => {
+      $('err').textContent = '';
       try {
-        const r = await window.keygen.issue({
-          name: document.getElementById('name').value,
-          notes: document.getElementById('notes').value
-        });
-        document.getElementById('out').style.display = 'block';
-        document.getElementById('exp').textContent = r.payload.expires;
-        document.getElementById('key').textContent = r.key;
-        document.getElementById('file').textContent = 'Saved: ' + r.file;
-      } catch (e) { alert(e.message || e); }
+        const r = await window.keygen.issue({ name: $('name').value, machine: $('machine').value, months: $('months').value,
+          start: $('start').value, amount: $('amount').value, notes: $('notes').value });
+        $('out').style.display = 'block';
+        $('summary').textContent = `${r.payload.name} · computer ${r.payload.machine} · valid ${r.payload.issued} to ${r.lastDay}`;
+        $('key').textContent = r.key;
+        $('file').textContent = 'Saved: ' + r.file + ' (and added to issued-keys.csv)';
+      } catch (e) { $('err').textContent = String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''); }
     };
-    document.getElementById('copy').onclick = async () => {
-      const t = document.getElementById('key').textContent;
-      await navigator.clipboard.writeText(t);
-      alert('Copied');
-    };
-    document.getElementById('open').onclick = () => window.keygen.openLicences();
+    $('copy').onclick = async () => { await window.keygen.copy($('key').textContent); $('copy').textContent = 'Copied'; setTimeout(() => $('copy').textContent = 'Copy key', 1500); };
+    $('open').onclick = () => window.keygen.openLicences();
   </script>
 </body>
 </html>

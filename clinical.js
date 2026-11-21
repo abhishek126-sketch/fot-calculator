@@ -106,9 +106,18 @@
     return out;
   }
 
+  // Adult BMI cut-offs do not apply under 18 years: children are classified by BMI-for-age centiles
+  // (IAP 2015 growth charts for Indian children 5-18 y; WHO growth standards/references). Update 2.0.
+  const CHILD_BMI_NOTE = 'Adult BMI cut-offs do not apply under 18 y — use BMI-for-age charts (IAP 2015 for Indian children; WHO).';
+  function bmiCategories(v, age) {
+    if (v == null || isNaN(v)) return null;
+    if (age != null && age < 18) return { asian: 'n/a (child)', who: 'n/a (child)', child: true, note: CHILD_BMI_NOTE };
+    return { asian: bmiCategoryAsian(v), who: bmiCategoryWHO(v), child: false, note: '' };
+  }
+
   const api = {
-    BMI_SOURCES, SMOKE_SOURCES,
-    feetInchesToCm, cmToFeetInches, bmi, bmiCategoryAsian, bmiCategoryWHO, smokingExposure
+    BMI_SOURCES, SMOKE_SOURCES, CHILD_BMI_NOTE,
+    feetInchesToCm, cmToFeetInches, bmi, bmiCategoryAsian, bmiCategoryWHO, bmiCategories, smokingExposure
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FOTCLIN = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

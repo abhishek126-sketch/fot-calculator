@@ -1,7 +1,7 @@
 {
   "name": "fot-calculator",
   "productName": "FOT Calculator",
-  "version": "1.2.0",
+  "version": "2.0.0",
   "description": "Forced Oscillation Technique and spirometry reference calculator (offline desktop)",
   "author": "Dr Abhishek Singh",
   "license": "UNLICENSED",
@@ -11,14 +11,16 @@
     "start": "electron .",
     "dist": "electron-builder --win nsis --x64",
     "dist:dir": "electron-builder --win --x64 --dir",
-    "test": "node --test ../tests/equations.test.js ../tests/spirometry.test.js ../tests/clinical.test.js ../tests/merge.test.js ../tests/folder-sync.test.js ./tests/detect-drive.test.js ./tests/licence.test.js ./tests/users.test.js ./tests/paths.test.js ./tests/updates.test.js",
+    "test": "node --test ../tests/v2-medical.test.js ../tests/equations.test.js ../tests/spirometry.test.js ../tests/clinical.test.js ../tests/merge.test.js ../tests/folder-sync.test.js ./tests/detect-drive.test.js ./tests/licence.test.js ./tests/users.test.js ./tests/paths.test.js ./tests/updates.test.js",
     "prepare-web": "node scripts/copy-web.js",
-    "predist": "npm run prepare-web"
+    "predist": "npm run prepare-web",
+    "dist:zip": "electron-builder --win dir --x64",
+    "dist:portable": "electron-builder --win portable --x64"
   },
   "build": {
     "appId": "com.abhishek126.fotcalculator",
     "productName": "FOT Calculator",
-    "copyright": "Copyright \u00a9 Dr Abhishek Singh",
+    "copyright": "Copyright © Dr Abhishek Singh",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -27,7 +29,8 @@
       "main.js",
       "preload.js",
       "package.json",
-      "lib/**/*"
+      "lib/**/*",
+      "build/icon.ico"
     ],
     "extraResources": [
       {
@@ -61,7 +64,11 @@
       "include": "build/installer.nsh",
       "artifactName": "FOT-Calculator-Setup-${version}.${ext}"
     },
-    "publish": null
+    "publish": null,
+    "asar": false,
+    "portable": {
+      "artifactName": "FOT-Calculator-${version}-Portable.${ext}"
+    }
   },
   "devDependencies": {
     "electron": "^33.2.0",

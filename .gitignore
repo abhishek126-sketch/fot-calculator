@@ -11,3 +11,7 @@ desktop/dist-private/
 desktop/keygen/embedded-private.pem
 desktop/keygen/node_modules/
 desktop/keygen/dist/
+**/*private*.pem
+desktop/keygen/lib/
+# Supplier contact shown on the activation screen (local only, not published)
+desktop/lib/supplier.json

@@ -100,13 +100,22 @@
     }
   };
 
+  // De S, Banerjee N, Kushwah GDS, Dharwey D. Lung India 2020;37:30-36 (doi:10.4103/lungindia.lungindia_260_19),
+  // Table 2, whole-breath, SEE. 253 never-smoking healthy adults aged 18-81 y (only 22 aged > 60 y: the paper says
+  // equations for > 60 y "must be interpreted cautiously"). R19 and R5-19 added from the same table (update 2.0).
   const ADULT = {
     label: 'Indian adult (Resmon Pro Full) — De et al., Lung India 2020;37:30-36', short: 'Indian Adult (De et al., Lung India 2020;37:30-36)',
-    params: ['r5', 'x5'],
+    age: [18, 81], height: null, oldAgeCaution: 60,
+    params: ['r5', 'r19', 'r5_19', 'x5'],
     predict(sex, age, ht, wt) {
       if (sex === 'male') return { r5: lin(10.035 - 0.057 * ht + 0.036 * wt + 0.008 * age, 0.961),
+        r19: lin(8.077 - 0.040 * ht + 0.02 * wt, 0.639),
+        r5_19: lin(2.685 - 0.02 * ht + 0.012 * wt + 0.004 * age, 0.399),
         x5: lin(-3.334 + 0.018 * ht - 0.009 * wt - 0.004 * age, 0.529) };
-      return { r5: lin(9.697 - 0.046 * ht + 0.033 * wt, 0.991), x5: lin(-4.40 + 0.020 * ht, 0.646) };
+      return { r5: lin(9.697 - 0.046 * ht + 0.033 * wt, 0.991),
+        r19: lin(8.683 - 0.038 * ht + 0.019 * wt, 0.745),
+        r5_19: lin(2.158 - 0.013 * ht + 0.009 * wt, 0.527),
+        x5: lin(-4.40 + 0.020 * ht, 0.646) };
     }
   };
 
@@ -135,11 +144,26 @@
     return w;
   }
 
+  /** Cautions that are not out-of-range (e.g. few older subjects in the study). */
+  function rangeCautions(dev, age) {
+    const c = [];
+    if (dev.oldAgeCaution && age > dev.oldAgeCaution && (!dev.age || age <= dev.age[1]))
+      c.push(`Age over ${dev.oldAgeCaution} y: few subjects of this age in the reference study (22 of 253); the authors advise interpreting predicted values cautiously.`);
+    return c;
+  }
+
+  /** FOT devices may report kPa·s/L; this app needs cmH2O·s/L (= hPa·s/L). Resistances below 1 cmH2O·s/L are not
+   * physiological (healthy tall adults are about 2-3), so such a value is almost certainly in kPa·s/L. */
+  function unitWarnings(m) {
+    const low = ['r5', 'rhi'].filter(k => m[k] != null && m[k] > 0 && m[k] < 1);
+    return low.length ? [`Resistance below 1 cmH2O·s/L looks like a value in kPa·s/L. This calculator needs cmH2O·s/L (kPa × 10.2). Please check the units on the device printout before using these results.`] : [];
+  }
+
 
   const ADULT_DEVICES = {
     de_lungindia: Object.assign({}, ADULT, {
-      id: 'de_lungindia',
-      ref: 'De et al., Lung India 2020;37:30-36 (Resmon Pro Full, Indian adults)',
+      id: 'de_lungindia', rLabel: 'R19',
+      ref: 'De S, Banerjee N, Kushwah GDS, Dharwey D. Lung India 2020;37:30-36. doi:10.4103/lungindia.lungindia_260_19 (Table 2, whole-breath, SEE; Resmon Pro Full, Indian adults 18-81 y)',
       approx: false,
       approxNote: ''
     }),
@@ -148,13 +172,14 @@
       label: 'Antlia FOT (Icaltech, India) — approximate mapping to De Lung India 2020',
       short: 'Antlia adult (approx. De et al., Lung India 2020)',
       ref: 'Approximate mapping to De et al., Lung India 2020;37:30-36 (Resmon Pro Full). Antlia FOT (Icaltech, India) described in Mandal et al. Lung India 2025;42:87-90 (doi:10.4103/lungindia.lungindia_413_24). No Antlia-derived predicted equations published.',
-      params: ['r5', 'x5'],
+      params: ['r5', 'r19', 'r5_19', 'x5'], rLabel: 'R20',
+      age: ADULT.age, height: null, oldAgeCaution: ADULT.oldAgeCaution,
       approx: true,
       approxNote: 'Antlia FOT (Icaltech, India): no Antlia-specific adult reference equations published (PubMed/EuropePMC search empty for Antlia equations). Using De et al., Lung India 2020;37:30-36 (Resmon Pro Full, Indian adults) as an approximate population match. Not derived on Antlia — interpret with caution. Device parameters in clinical use include R5, R20, X5, AX, Fres (Mandal et al. 2025).',
       predict: ADULT.predict
     }
   };
 
-  const api = { DEVICES, ADULT, ADULT_DEVICES, K, Z_CUT, interpretZ, rangeWarnings };
+  const api = { DEVICES, ADULT, ADULT_DEVICES, K, Z_CUT, interpretZ, rangeWarnings, rangeCautions, unitWarnings };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.FOTEQ = api;
 })(this);
